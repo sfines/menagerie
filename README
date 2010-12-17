@@ -1,0 +1,39 @@
+ZooKeeper is an incredibly efficient and useful tool for coordinating activities between individual nodes on a cluster.
+It's filesystem abstraction is a very clean way of interpreting a number of different activities, including locking,
+leader election, metadata storage, and a variety of other things which need to be atomic and distributed. It comes
+in bindings for several languages, including Java, C and Python, which makes it useful across applications as well.
+
+However, one thing that it lacks is a high-level API for common tasks such as distributed concurrency. While the sites
+include patterns for creating locks, barriers, and queues, ZooKeeper lacks a fully-functional high-level API.
+
+Enter Menagerie--a ZooKeeper-based implementation of the Java Concurrency idioms. Written for the Java ZooKeeper bindings,
+we have implemented, where possible, drop-in replacements for standard java threading tools. Where drop-ins are not
+fully possible(i.e. there is no corresponding Java interface describing the behavior), our ZooKeeper variants hold
+as closely as possible to the method signatures of the associated Java concurrency tool.
+
+Included in Menagerie as of the initial release are the following:
+
+Reentrant Mutex Locks
+Reentrant ReadWrite Locks
+Distributed Lock Conditions
+CountDown latches
+Cyclic Barriers
+Synchronous Leader Election
+
+This is only touching the surface of what ZooKeeper is capable of, and we plan on creating many more of these high-level
+concurrency structures, such as Semaphore, distributed executor frameworks, and many more.
+
+How to use:
+
+You find a situation where you want to use a Distributed Mutex Lock? call
+
+    ZkSessionManager sessionManager = new DefaultZkSessionManager(myZooKeeperServers,myTimeout);
+    Lock myDistributedLock = ZkLocks.newReentrantLock(sessionManager,"/myLockPath");
+    myDistributedLock.lock();
+    try{
+    //now do your thing
+    }finally{
+      myDistributedLock.unlock();
+    }
+
+The same goes for CountDownLatches, CyclicBarriers and our other primitives.
