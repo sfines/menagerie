@@ -3,7 +3,7 @@ package org.menagerie.election;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Interface for managing Leader Elections across distributed networks.
+ * Interface for synchronously managing Leader Elections across distributed networks.
  *
  * @author Scott Fines
  * @version 1.0
@@ -22,6 +22,7 @@ public interface LeaderElector {
      *
      * @param timeout the maximum time to wait to become leader
      * @param unit the time units to use
+     * @throws InterruptedException if the thread is interrupted while waiting to determine the leadership
      */
     public boolean nominateSelfForLeader(long timeout, TimeUnit unit) throws InterruptedException;
 

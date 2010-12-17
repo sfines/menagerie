@@ -16,7 +16,8 @@ import java.util.concurrent.locks.Lock;
  * ZooKeeper-based implementation of a CountDownLatch.
  * <p>
  * Wherever possible, this implementation is semantically equivalent to {@link java.util.concurrent.CountDownLatch},
- * and adheres to as many of the same constraints as are reasonable to expect.
+ * and adheres to as many of the same constraints as are reasonable to expect. Where this implementation differs,
+ * a notation will be made in the javadoc for that method.
  * <p>
  * Note, however, that these latches are one-use-only tools--if repeated uses of the same instance are required,
  * consider using a {@link ZkCyclicBarrier} instead. However, multiple uses of the
