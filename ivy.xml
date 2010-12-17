@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ivy-module version="2.0">
-    <info organisation="coop.nisc.mdm" module="mdm-"/>
+    <info organisation="org.menagerie" module="menagerie"/>
+    <!--<properties file="buildConfig.properties"/>-->
 
     <configurations>
         <conf name="compile" visibility="public" description="Compilation configuration"/>
@@ -11,8 +12,8 @@
     </configurations>
 
     <dependencies>
-       <dependency org="org.apache.hadoop" name="zookeeper" rev="3.3.2" conf="*->compile;"/>
+       <dependency org="org.apache.zookeeper" name="zookeeper" rev="3.3.1" conf="compile->*;" transitive="false"/>
 
-        <dependency org="org.junit" name="junit" rev="4.7" conf="*->compile-test;"/>
+        <dependency org="junit" name="junit" rev="4.8.2" conf="compile-test->*;"/>
     </dependencies>
 </ivy-module>
