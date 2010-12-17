@@ -21,7 +21,7 @@ import java.util.concurrent.locks.Condition;
  *          Date: 16-Dec-2010
  *          Time: 20:13:19
  */
-public class ZkCondition extends ZkPrimitive implements Condition {
+class ZkCondition extends ZkPrimitive implements Condition {
     private static final String conditionPrefix="condition";
     private static final char conditionDelimiter = '-';
     private final ReentrantZkLock distributedLock;
@@ -45,12 +45,8 @@ public class ZkCondition extends ZkPrimitive implements Condition {
 
     @Override
     public long awaitNanos(long nanosTimeout) throws InterruptedException {
-        return awaitNanos(nanosTimeout);
-    }
-
-    private long awaitNanos(long nanosTimeout,boolean interruptable) throws InterruptedException {
-        if(!distributedLock.hasLock())
-           throw new IllegalMonitorStateException("await() was called without owning the associated lock");
+       if(!distributedLock.hasLock())
+           throw new IllegalMonitorStateException("await was called without owning the associated lock");
 
         //put a signal node onto zooKeeper, then wait for it to be deleted
         try {
@@ -60,46 +56,34 @@ public class ZkCondition extends ZkPrimitive implements Condition {
             distributedLock.unlock();
             long timeLeft  = nanosTimeout;
             while(true){
-                long start = System.nanoTime();
-                boolean acquired = false;
-                try{
-                    acquired = localLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
-                }catch(InterruptedException ie){
-                    //suppress if not interruptable
-                    if(interruptable){
-                        zooKeeper.delete(conditionName,-1);
-                        throw ie;
-                    }
+                if(timeLeft<=0){
+                    //timed out
+                    zooKeeper.delete(conditionName,-1);
+                    return -1;
                 }
+
+                long start = System.nanoTime();
+                boolean acquired = localLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
                 try{
-                    long end = System.nanoTime();
-                    timeLeft -=(end-start);
-                    if(timeLeft<=0||!acquired){
+                    if(!acquired){
                         //delete the condition node myself
                         zooKeeper.delete(conditionName,-1);
-                        return timeLeft;
+                        return -1;
                     }else{
                         //we still have some time left over
-                        if(zooKeeper.exists(conditionName,this)==null){
+                        long endTime = System.nanoTime();
+                        timeLeft -= (endTime-start);
+                        if(timeLeft<=0){
+                            zooKeeper.delete(conditionName,-1);
+                            return timeLeft;
+                        }else if(zooKeeper.exists(conditionName,this)==null){
                             //we have been signalled, so relock and then return
-                            start = System.nanoTime();
-                            boolean reacquired = false;
-                            try{
-                                reacquired = distributedLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
-                            }catch(InterruptedException ie){
-                                //suppress if not interruptable
-                                if(interruptable){
-                                    zooKeeper.delete(conditionName,-1);
-                                    throw ie;
-                                }
-                            }
-                            end = System.nanoTime();
-                            timeLeft -=(end-start);
-                            if(!reacquired||timeLeft<=0){
-                                //timed out
+                            boolean reacquired = distributedLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
+                            if(!reacquired){
+                                //timed out, so delete our condition node, since we aren't waiting any more 
                                 zooKeeper.delete(conditionName,-1);
                             }
-                            return timeLeft;
+                            return -1;
                         }else{
                             timeLeft = condition.awaitNanos(timeLeft);
                         }
@@ -120,13 +104,18 @@ public class ZkCondition extends ZkPrimitive implements Condition {
 
     @Override
     public boolean awaitUntil(Date deadline) throws InterruptedException {
-        return false;  //To change body of implemented methods use File | Settings | File Templates.
+        if(!distributedLock.hasLock())
+            throw new IllegalMonitorStateException("await is attempted without first owning the associated lock");
+
+        long timeToWait = deadline.getTime()-System.currentTimeMillis();
+        return timeToWait > 0 && await(timeToWait, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public void signal() {
         if(!distributedLock.hasLock())
             throw new IllegalMonitorStateException("Signal is attempted without first owning the signalling lock");
+
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         try {
             List<String> conditionsToSignal = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), conditionPrefix);
@@ -146,6 +135,7 @@ public class ZkCondition extends ZkPrimitive implements Condition {
     public void signalAll() {
         if(!distributedLock.hasLock())
             throw new IllegalMonitorStateException("Signal is attempted without first owning the signalling lock");
+
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         try {
             List<String> conditionsToSignal = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), conditionPrefix);
