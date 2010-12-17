@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name=" Ivy" basedir="."
+         xmlns:ivy="antlib:org.apache.ivy.ant"
+         xmlns:antcontrib="antlib:net.sf.antcontrib">
+
+    <property file="buildConfig.properties"/>
+
+    <target name="clean">
+        <delete dir="${dir.build}"/>
+        <delete dir="${dir.dist}"/>
+    </target>
+
+    <target name="resolve">
+        <ivy:resolve/>
+    </target>
+
+    <target name="resolve.dependencies" depends="resolve">
+        <ivy:cachepath pathid="classpath.compile.main" conf="compile"/>
+        <ivy:cachepath pathid="classpath.compile.tests" conf="compile-test"/>
+        <ivy:cachepath pathid="classpath.build" conf="build"/>
+        <ivy:cachepath pathid="classpath.run.main" conf="runtime"/>
+        <ivy:cachepath pathid="classpath.run.tests" conf="runtime-test"/>
+        <ivy:cachepath module="junit" pathid="classpath.junit"/>
+    </target>
+
+    <target name="retrieve" depends="resolve" unless="skip.retrieve">
+        <ivy:retrieve conf="compile" pattern="${dir.lib}/[conf]/[type]/[artifact].[ext]"/>
+        <ivy:retrieve conf="compile-test" pattern="${dir.lib}/[conf]/[type]/[artifact].[ext]"/>
+    </target>
+
+    <target name="prepare">
+        <mkdir dir="${dir.build.main}"/>
+        <mkdir dir="${dir.dist}"/>
+
+        <tstamp>
+            <format property="build.time" pattern="yyyy-MM-dd hh:mm a"/>
+        </tstamp>
+        <property name="already.prepared" value="true"/>
+    </target>
+
+    <target name="compile" depends="compile-main,compile-tests"/>
+
+    <target name="compile-main" depends="prepare,resolve.dependencies">
+        <javac destdir="${dir.build.main}"
+               includeantruntime="false" fork="true" debug="true">
+            <src location="${dir.src.main}"/>
+            <classpath refid="classpath.compile.main"/>
+        </javac>
+    </target>
+
+    <target name="compile-tests" depends="prepare,compile-main" unless="skip.unittests">
+        <!--Copy compiled code to be instrumented for cobertura-->
+        <!--TODO -sf- change this to copy instead-->
+        <copydir src="${dir.build.main}" dest="${dir.build.instrumented}"/>
+        <mkdir dir="${dir.build.tests}"/>
+
+        <javac srcdir="${dir.src.tests}" destdir="${dir.build.tests}"
+               includeantruntime="false" fork="true" debug="true">
+            <classpath>
+                <!--<path refid="compile.main"/>-->
+                <path refid="classpath.compile.tests"/>
+                <path refid="classpath.build"/>
+                <pathelement location="${dir.build.instrumented}"/>
+            </classpath>
+        </javac>
+    </target>
+
+    <target name="prepare.cobertura" depends="compile" unless="skip.unittests">
+        <taskdef classpathref="classpath.build" resource="tasks.properties"/>
+        <!--<delete dir="${dir.unittests.instrument}"/>-->
+        <delete dir="${dir.unittests.report}"/>
+
+        <!--<mkdir dir="${dir.unittests.instrument}"/>-->
+        <mkdir dir="${dir.unittests.report}"/>
+
+        <cobertura-instrument datafile="${dir.unittests.report}/cobertura.ser">
+            <fileset dir="${dir.build.instrumented}">
+                <include name="**/*.class"/>
+            </fileset>
+        </cobertura-instrument>
+    </target>
+
+    <target name="unittests" depends="prepare.cobertura" unless="skip.unittests">
+        <taskdef name="junit"
+                 classname="org.apache.tools.ant.taskdefs.optional.junit.JUnitTask">
+            <classpath refid="classpath.junit"/>
+        </taskdef>
+
+        <mkdir dir="${dir.unittests.report}"/>
+        <junit fork="true" showoutput="true" printsummary="yes"
+               haltonfailure="${unittests.haltonfailure}">
+            <sysproperty key="net.sourceforge.cobertura.datafile"
+                         file="${dir.unittests.report}/cobertura.ser"/>
+            <classpath>
+                <path refid="classpath.run.tests"/>
+                <path refid="classpath.build"/>
+                <pathelement location="${dir.build.instrumented}"/>
+                <pathelement location="${dir.build.tests}"/>
+            </classpath>
+            <formatter type="xml"/>
+            <batchtest todir="${dir.unittests.report}">
+                <fileset dir="${dir.src.tests}">
+                    <include name="**/*Test*.java"/>
+                </fileset>
+            </batchtest>
+        </junit>
+        <cobertura-report format="xml" srcdir="${dir.src.main}" destdir="${dir.unittests.report}"
+                          datafile="${dir.unittests.report}/cobertura.ser"/>
+    </target>
+
+    <target name="dist" depends="compile,unittests">
+        <jar jarfile="${dir.dist}/mdm-.jar">
+            <fileset dir="${dir.build.main}"/>
+            <manifest>
+                <attribute name="build_time" value="${build.time}"/>
+                <attribute name="build_version" value="${build.version}"/>
+            </manifest>
+        </jar>
+        <jar jarfile="${dir.dist}/mdm--src.jar">
+            <fileset dir="${dir.src.main}"/>
+        </jar>
+    </target>
+
+    <target name="publish" depends="dist">
+        <ivy:publish resolver="fileSystem" pubrevision="${build.version}" overwrite="true" conf="compile">
+            <artifacts pattern="${dir.dist}/[artifact].[ext]"/>
+            <artifact name="mdm-" type="jar"/>
+            <artifact name="mdm--src" type="source" ext="jar"/>
+        </ivy:publish>
+    </target>
+
+
+    <target name="proto">
+        <exec executable="protoc">
+            <arg value="--java_out=src"/>
+            <arg value="proto/Task.proto"/>
+        </exec>
+    </target>
+</project>
