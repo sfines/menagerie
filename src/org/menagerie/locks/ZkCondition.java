@@ -40,13 +40,15 @@ class ZkCondition extends ZkPrimitive implements Condition {
 
     @Override
     public void awaitUninterruptibly() {
-
+        //TODO -sf- implement!
     }
 
     @Override
     public long awaitNanos(long nanosTimeout) throws InterruptedException {
-       if(!distributedLock.hasLock())
-           throw new IllegalMonitorStateException("await was called without owning the associated lock");
+        if(Thread.interrupted())
+            throw new InterruptedException();
+        if(!distributedLock.hasLock())
+            throw new IllegalMonitorStateException("await was called without owning the associated lock");
 
         //put a signal node onto zooKeeper, then wait for it to be deleted
         try {
@@ -64,29 +66,28 @@ class ZkCondition extends ZkPrimitive implements Condition {
 
                 long start = System.nanoTime();
                 boolean acquired = localLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
+
                 try{
                     if(!acquired){
                         //delete the condition node myself
                         zooKeeper.delete(conditionName,-1);
                         return -1;
-                    }else{
-                        //we still have some time left over
-                        long endTime = System.nanoTime();
-                        timeLeft -= (endTime-start);
-                        if(timeLeft<=0){
+                    }
+                    long endTime = System.nanoTime();
+                    timeLeft -= (endTime-start);
+                    if(timeLeft<=0){
+                        zooKeeper.delete(conditionName,-1);
+                        return timeLeft;
+                    }else if(zooKeeper.exists(conditionName,this)==null){
+                        //we have been signalled, so relock and then return
+                        boolean reacquired = distributedLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
+                        if(!reacquired){
+                            //timed out, so delete our condition node, since we aren't waiting any more
                             zooKeeper.delete(conditionName,-1);
-                            return timeLeft;
-                        }else if(zooKeeper.exists(conditionName,this)==null){
-                            //we have been signalled, so relock and then return
-                            boolean reacquired = distributedLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
-                            if(!reacquired){
-                                //timed out, so delete our condition node, since we aren't waiting any more 
-                                zooKeeper.delete(conditionName,-1);
-                            }
-                            return -1;
-                        }else{
-                            timeLeft = condition.awaitNanos(timeLeft);
                         }
+                        return -1;
+                    }else{
+                        timeLeft = condition.awaitNanos(timeLeft);
                     }
                 }finally{
                     localLock.unlock();
@@ -111,6 +112,14 @@ class ZkCondition extends ZkPrimitive implements Condition {
         return timeToWait > 0 && await(timeToWait, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Chooses a party which is waiting on this lock, and signals it.
+     * <p>
+     * Note:This implementation does NOT check the interrupted status of the current thread, as it prioritizes that
+     * a signal ALWAYS be sent, if there is a party waiting for that signal.
+     *
+     * @see #signal() in java.util.concurrent.locks.Condition
+     */
     @Override
     public void signal() {
         if(!distributedLock.hasLock())
@@ -119,6 +128,7 @@ class ZkCondition extends ZkPrimitive implements Condition {
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         try {
             List<String> conditionsToSignal = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), conditionPrefix);
+            if(conditionsToSignal.size()<=0)return; //no parties to signal
 
             //delete the lowest numbered waiting party
             ZkUtils.sortBySequence(conditionsToSignal,conditionDelimiter);
@@ -139,7 +149,8 @@ class ZkCondition extends ZkPrimitive implements Condition {
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         try {
             List<String> conditionsToSignal = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), conditionPrefix);
-
+            if(conditionsToSignal.size()<=0)return; //no parties to signal
+            
             //notify all waiting conditions in sequence
             ZkUtils.sortBySequence(conditionsToSignal,conditionDelimiter);
 
