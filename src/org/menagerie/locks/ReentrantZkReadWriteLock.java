@@ -1,0 +1,139 @@
+package org.menagerie.locks;
+
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
+import org.menagerie.ZkSessionManager;
+import org.menagerie.ZkUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReadWriteLock;
+
+/**
+ * TODO -sf- document!
+ *
+ * @author Scott Fines
+ * @version 1.0
+ *          Date: 12-Dec-2010
+ *          Time: 15:37:20
+ */
+public class ReentrantZkReadWriteLock implements ReadWriteLock {
+    private static final String readLockPrefix="readLock";
+    private static final String writeLockPrefix="writeLock";
+    private final String baseNode;
+    private final ZkSessionManager zkSessionManager;
+    private final List<ACL> privileges;
+
+    public ReentrantZkReadWriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+        this.baseNode = baseNode;
+        this.zkSessionManager = zkSessionManager;
+        this.privileges = privileges;
+    }
+
+    public ReadLock readLock(){
+        return new ReadLock(baseNode,zkSessionManager,privileges);
+    }
+
+    public WriteLock writeLock(){
+        return new WriteLock(baseNode,zkSessionManager,privileges);
+    }
+
+    public class ReadLock extends ReentrantZkLock{
+
+        protected ReadLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+            super(baseNode, zkSessionManager, privileges);
+        }
+
+        @Override
+        protected boolean askForLock(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
+            List<String> writeLocks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),writeLockPrefix);
+            ZkUtils.sortBySequence(writeLocks,lockDelimiter);
+
+            long mySequenceNumber = ZkUtils.parseSequenceNumber(lockNode,lockDelimiter);
+            //get all write Locks which are less than my sequence number
+            List<String> aheadWriteLocks = new ArrayList<String>();
+            for(String writeLock:writeLocks){
+                long lockSeqNbr = ZkUtils.parseSequenceNumber(writeLock, lockDelimiter);
+                if(lockSeqNbr <mySequenceNumber){
+                    //a write lock ahead of us, so add it in
+                    aheadWriteLocks.add(writeLock);
+                }
+            }
+            /*
+            since aheadWriteLocks is in sorted order, we know that the last element which is still in ZooKeeper
+            is the write lock that we have to wait for
+             */
+            while(aheadWriteLocks.size()>0){
+                String lastWriteLock = aheadWriteLocks.remove(aheadWriteLocks.size() - 1);
+                Stat stat;
+                if(watch)
+                    stat = zk.exists(baseNode+"/"+ lastWriteLock,this);
+                else
+                    stat = zk.exists(baseNode+"/"+ lastWriteLock,false);
+                if(stat!=null){
+                    //this node still exists, so wait in line behind it
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        protected String getBaseLockPath() {
+            return baseNode+"/"+readLockPrefix+lockDelimiter;
+        }
+
+        @Override
+        public Condition newCondition() {
+            throw new UnsupportedOperationException("Read Locks do not support conditions");
+        }
+    }
+
+    public class WriteLock extends ReentrantZkLock{
+
+        protected WriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+            super(baseNode, zkSessionManager, privileges);
+        }
+
+        @Override
+        protected boolean askForLock(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
+            List<String> locks = ZkUtils.filterByPrefix(zk.getChildren(baseNode, false),readLockPrefix,writeLockPrefix);
+            ZkUtils.sortBySequence(locks,lockDelimiter);
+
+            long mySequenceNumber = ZkUtils.parseSequenceNumber(lockNode,lockDelimiter);
+            //get all write Locks which are less than my sequence number
+            List<String> aheadLocks = new ArrayList<String>();
+            for(String lock: locks){
+                if(ZkUtils.parseSequenceNumber(lock,lockDelimiter)<mySequenceNumber){
+                    //a write lock ahead of us, so add it in
+                    aheadLocks.add(lock);
+                }
+            }
+            /*
+            since aheadLocks is in sorted order, we know that the last element which is still in ZooKeeper
+            is the lock that we have to wait for
+             */
+            while(aheadLocks.size()>0){
+                String lastReadLock = aheadLocks.remove(aheadLocks.size() - 1);
+                Stat stat;
+                if(watch)
+                    stat = zk.exists(baseNode+"/"+ lastReadLock,this);
+                else
+                    stat = zk.exists(baseNode+"/"+ lastReadLock,false);
+                if(stat!=null){
+                    //this node still exists, so wait in line behind it
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        protected String getBaseLockPath() {
+            return baseNode+"/"+writeLockPrefix+lockDelimiter;
+        }
+    }
+}
