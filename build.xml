@@ -72,7 +72,7 @@
         </javac>
     </target>
 
-    <target name="javadoc" depends="compile" description="Compiles the javadoc">
+    <target name="javadoc" description="Compiles the javadoc">
         <mkdir dir="${dir.docs.api}"/>
         <javadoc packagenames="org.menagerie.*"
                  sourcepath="src"

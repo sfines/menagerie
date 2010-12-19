@@ -37,8 +37,6 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 12-Dec-2010
- *          Time: 16:35:56
  */
 public interface LeaderElector {
 
@@ -74,6 +72,7 @@ public interface LeaderElector {
      *      <li>has its interrupted status set on entry to this method
      *      <li> is interrupted while undergoing election
      * </ul>
+     * <br/>
      * then an {@link InterruptedException} is thrown and the current thread's status is cleared. When this
      * occurs, it is no longer possible for this thread to become the leader.
      *

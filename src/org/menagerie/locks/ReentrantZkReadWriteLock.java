@@ -31,13 +31,34 @@ import java.util.concurrent.locks.ReadWriteLock;
 /**
  * ZooKeeper-based implementation of a <i>fair</i> Reentrant Read-Write lock.
  * <p>
- * This class adheres, wherever reasonable, to the idioms specified in
- * {@link java.util.concurrent.locks.ReentrantReadWriteLock}.
+ * This class does not impose a reader or a writer preference ordering for lock access. Instead, all lock acquisition
+ * requests are processed in order, as follows:
+ *
+ * <blockquote>
+ *  Acquisition requests contend for entry using a ZooKeeper-ordered arrival policy. When the currently held lock
+ * is released, either the longest-waiting single writer will be assigned the write lock, or if there are a group
+ * of reader parties waiting longer than all waiting writer parties, then all readers in that group will be assigned
+ * the read lock.
+ * <p>
+ * A party that attempts to acquire a read lock for the first time will block if either the write lock is held, or
+ * if there is a waiting writer party. The party will block until the oldest currently waiting writer party has
+ * acquired and released the write lock. If a waiting writer abandons its wait, it has been considered equivalent to
+ * an acquisition and release of the lock.
+ * <p>
+ * A party that attempts to acquire a write lock for the first time will block unless both the read and write locks are
+ * free. Note that, unlike in the concurrent {@link java.util.concurrent.locks.ReentrantReadWriteLock} version, <i>
+ * all</i> methods obey ZooKeeper-ordering to determine when a lock may be acquired.
+ * </blockquote>
+ *<p>
+ * Note: As of version 1.0, downgrading a WriteLock to a ReadLock without release is not supported. While this may
+ * later be supported, it is initially difficult to reconcile downgrades with the strict ordering of requests that
+ * ZooKeeper requires. It is better, at least at this stage, to treat a WriteLock as <i>also</i> a read lock, and perform
+ * activities that are required. 
+ *
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 12-Dec-2010
- *          Time: 15:37:20
+ * @see java.util.concurrent.locks.ReentrantReadWriteLock
  */
 public class ReentrantZkReadWriteLock implements ReadWriteLock {
     private static final String readLockPrefix="readLock";
@@ -65,9 +86,9 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
         }
 
         @Override
-        protected boolean askForLock(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
+        protected boolean tryAcquireDistributed(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
             List<String> writeLocks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),writeLockPrefix);
-            ZkUtils.sortBySequence(writeLocks,lockDelimiter);
+            ZkUtils.sortBySequence(writeLocks,lockDelimiter); 
 
             long mySequenceNumber = ZkUtils.parseSequenceNumber(lockNode,lockDelimiter);
             //get all write Locks which are less than my sequence number
@@ -116,13 +137,12 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
     }
 
     public class WriteLock extends ReentrantZkLock{
-
         protected WriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
             super(baseNode, zkSessionManager, privileges);
         }
 
         @Override
-        protected boolean askForLock(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
+        protected boolean tryAcquireDistributed(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
             List<String> locks = ZkUtils.filterByPrefix(zk.getChildren(baseNode, false),readLockPrefix,writeLockPrefix);
             ZkUtils.sortBySequence(locks,lockDelimiter);
 

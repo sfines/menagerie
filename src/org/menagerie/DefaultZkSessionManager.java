@@ -20,8 +20,9 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -37,7 +38,9 @@ import java.util.concurrent.Executors;
  * @version 1.0
  */
 public class DefaultZkSessionManager implements ZkSessionManager{
-    private List<ConnectionListener> listeners = new CopyOnWriteArrayList<ConnectionListener>();
+    //this could potentially be a very write-heavy list, so a synchronized list will perform better
+    //than a more traditional CopyOnWriteArrayList would be
+    private List<ConnectionListener> listeners = Collections.synchronizedList(new ArrayList<ConnectionListener>());
 
     private ZooKeeper zk;
     private final String connectionString;
@@ -48,7 +51,7 @@ public class DefaultZkSessionManager implements ZkSessionManager{
     /**
      * Creates a new instance of a DefaultZkSessionManager.
      *
-     * @param connectionString the string to connect to ZooKeeper with (in the form of <serverIP>:<port>,...)
+     * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
      * @param timeout the timeout to use before expiring the ZooKeeper session.
      */
     public DefaultZkSessionManager(String connectionString, int timeout) {
@@ -59,7 +62,7 @@ public class DefaultZkSessionManager implements ZkSessionManager{
      * Creates a new instance of a DefaultZkSessionManager, using the specified ExecutorService to handle
      * ConnectionListener api calls.
      *
-     * @param connectionString the string to connect to ZooKeeper with (in the form of <serverIP>:<port>,...)
+     * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
      * @param timeout the timeout to use before expiring the ZooKeeper session.
      * @param executor the executor to use in constructing calling threads.
      */

@@ -37,8 +37,6 @@ import static org.junit.Assert.assertTrue;
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 21-Nov-2010
- *          Time: 17:46:36
  */
 public class ZkReadWriteLockTest {
 
@@ -208,5 +206,26 @@ public class ZkReadWriteLockTest {
         acquired = correctnessLatch.await(250, TimeUnit.MILLISECONDS);
         assertTrue("The second write lock was never acquired!",acquired);
     }
+
+    @Test(timeout=1000l)
+    public void testUpgradingReadToWriteNotPossibleSingleThread() throws Exception{
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        Lock readLock = lock.readLock();
+        readLock.lock();
+
+        boolean acquired = lock.writeLock().tryLock(250l, TimeUnit.MILLISECONDS);
+        assertTrue("The Write lock was acquired improperly!",!acquired);
+    }
+
+    @Test(timeout = 1000l)
+    public void testDowngradingWriteLockToReadPossible() throws Exception{
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        Lock writeLock = lock.writeLock();
+        writeLock.lock();
+
+        boolean acquired = lock.readLock().tryLock(250l, TimeUnit.MILLISECONDS);
+        assertTrue("The Read lock was never acquired!",acquired);
+    }
+
 
 }

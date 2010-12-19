@@ -40,18 +40,25 @@ public class ZkPrimitive {
     protected final ZkSessionManager zkSessionManager;
     protected final String baseNode;
     protected final List<ACL> privileges;
-    protected final Lock localLock = new ReentrantLock();
-    protected final Condition condition = localLock.newCondition();
+    protected final Lock localLock;
+    protected final Condition condition;
     protected volatile boolean broken=false;
     protected final ConnectionListener connectionListener = new PrimitiveConnectionListener();
-    protected final Watcher signalWatcher = new SignallingWatcher(localLock,condition);
+    protected final Watcher signalWatcher;
 
     protected ZkPrimitive(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+        this(baseNode,zkSessionManager,privileges,new ReentrantLock(true));
+    }
+
+    protected ZkPrimitive(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges, Lock localLock){
         if(baseNode==null)
             throw new NullPointerException("No base node specified!");
         this.baseNode = baseNode;
         this.zkSessionManager = zkSessionManager;
         this.privileges = privileges;
+        this.localLock = localLock;
+        condition = this.localLock.newCondition();
+        signalWatcher = new SignallingWatcher(this);
         ensureNodeExists();
     }
 
@@ -103,50 +110,42 @@ public class ZkPrimitive {
         zkSessionManager.removeConnectionListener(connectionListener);
     }
 
+    protected void notifyParties(){
+        localLock.lock();
+        try{
+            condition.signalAll();
+        }finally{
+            localLock.unlock();
+        }
+    }
+
     protected class PrimitiveConnectionListener implements ConnectionListener{
 
         @Override
         public void syncConnected() {
             //we had to connect to another server, and this may have taken time, causing us to miss our watcher, so let's
             //signal everyone locally and see what we get.
-            localLock.lock();
-            try{
-                condition.signalAll();
-            }finally{
-                localLock.unlock();
-            }
+            notifyParties();
         }
 
         @Override
         public void expired() {
             //indicate that this lock is broken, and alert all waiting threads to throw an Exception
             broken=true;
-            localLock.lock();
-            try{
-                condition.signalAll();
-            }finally{
-                localLock.unlock();
-            }
+            notifyParties();
         }
     }
 
     private static class SignallingWatcher implements Watcher{
-        private final Lock localLock;
-        private final Condition localCondition;
+        private final ZkPrimitive primitive;
 
-        private SignallingWatcher(Lock localLock, Condition localCondition) {
-            this.localLock = localLock;
-            this.localCondition = localCondition;
+        private SignallingWatcher(ZkPrimitive primitive) {
+            this.primitive = primitive;
         }
 
         @Override
         public void process(WatchedEvent event) {
-            localLock.lock();
-            try{
-                localCondition.signalAll();
-            }finally{
-                localLock.unlock();
-            }
+            primitive.notifyParties();
         }
     }
 }
