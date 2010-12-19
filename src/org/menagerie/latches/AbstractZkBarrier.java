@@ -18,7 +18,6 @@ package org.menagerie.latches;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
-import org.menagerie.ConnectionListener;
 import org.menagerie.ZkPrimitive;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
@@ -31,10 +30,11 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 11-Dec-2010
- *          Time: 11:18:17
  */
-abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListener {
+abstract class AbstractZkBarrier extends ZkPrimitive {
+    /**
+     * The total number of parties which must join this barrier before waiting parties may proceed.
+     */
     protected final long total;
 
     protected AbstractZkBarrier(long total, String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
@@ -61,7 +61,7 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
         if(Thread.interrupted())
             throw new InterruptedException();
         //attach ourselves as a session listener
-        zkSessionManager.addConnectionListener(this);
+        zkSessionManager.addConnectionListener(connectionListener);
         boolean barrierReached;
         while(true){
             if(Thread.interrupted())
@@ -87,29 +87,8 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
                 localLock.unlock();
             }
         }
-        zkSessionManager.removeConnectionListener(this);
+        zkSessionManager.removeConnectionListener(connectionListener);
         return barrierReached;
-    }
-
-
-    /**
-     * Determines the highest sequential count node.
-     * <p>
-     * This ensures that, once a thread on a node has indicated a countDown, failure of that node (and
-     * subsequent removal of its ephemeral nodes) will not keep the CountDownLatch on other nodes from progressing
-     * to completion.
-     *
-     * @param children the children which match the latch prefix
-     * @param latchDelimiter the separator between the name of the nodes, and their count parts
-     * @return the number of the latest child to be added to the node
-     */
-    protected long highestChild(List<String> children, char latchDelimiter) {
-        if(children.size()<=0)return 0l;
-
-        ZkUtils.sortBySequence(children,latchDelimiter);
-        //get the highest sequence element number
-        String lastChild = children.get(children.size()-1);
-        return Long.parseLong(lastChild.substring(lastChild.indexOf(latchDelimiter)+1));
     }
 
     /**
@@ -138,17 +117,5 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
                     throw ke;
             }
         }
-    }
-
-    @Override
-    public void syncConnected() {
-        //pretend like the Watcher was just called to pick up any changes
-        signalWatcher.process(null);
-    }
-
-    @Override
-    public void expired() {
-        //ensure that waiting threads try and re-establish themselves
-        signalWatcher.process(null);
     }
 }

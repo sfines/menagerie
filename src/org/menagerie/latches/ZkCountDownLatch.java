@@ -37,11 +37,27 @@ import java.util.concurrent.locks.Lock;
  * <p>
  * Note that, unlike the concurrent version of this class, multiple uses of this class is allowed, so long as
  * {@link #closeLatch()} is called between uses.
+ * <p>
+ * <h4> Node Failure Considerations</h4>
+ * <p>
+ * Unlike concurrent {@link java.util.concurrent.CountDownLatch} implementations, these implementations are sensitive
+ * to node failure. In a concurrent world, if one thread fails, then the latch may not proceed, causing limited deadlocks,
+ * which may not be ideal, but are generally caused by manageable situations which can be accounted for. In the
+ * distributed environment, Node failures may occur at any time, for any number of reasons, some of which cannot be
+ * controlled or accounted for. In general, it is better, wherever possible, to allow latches to proceed even in the
+ * face of node failure scenarios.
+ * <p>
+ * To account for these node failure scenarios, once a party has counted down, then this latch will regard it as
+ * <i>permanently</i> counted down. In this sense, <i>all</i> latches on <i>all</i> nodes will regard this as counted down,
+ * even if the party which did the counting down subsequently fails.
+ * <p>
+ * Note, however, that if a node fails <i>before</i> it can count down, it will leave all parties waiting potentially
+ * indefinitely for the latch to proceed. Only <i>after</i> a node has counted down (in the ZooKeeper-server-ordering) will
+ * other parties ignore that failure.
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 11-Dec-2010
- *          Time: 09:42:27
+ * @see java.util.concurrent.CountDownLatch
  */
 public class ZkCountDownLatch extends AbstractZkBarrier {
     private static final String latchPrefix = "countDownLatch";
@@ -63,7 +79,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
      * </ul>
      */
-     ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+     public ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         super(total, latchNode, zkSessionManager, privileges);
 
         ensureState();
@@ -244,8 +260,6 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
     public String toString() {
         return "ZkCountDownLatch[ Latch Node = "+baseNode+", Current Count = "+getCount()+", total = "+ total+"]";
     }
-
-
     
 /*-----------------------------------------------------------------------------------------------------------------*/
     /*private helper methods*/

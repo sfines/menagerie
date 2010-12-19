@@ -41,18 +41,34 @@ import java.util.concurrent.locks.Lock;
  * A CyclicBarrier causes <i>all</i> threads which call the {@code await()} methods to wait for the barrier to be completed
  * across all participating nodes. The cyclic nature allows the same instance to be repeatedly used, by calling the
  * {@link #reset()} methods.
+ * <p>
+ * <h4> Node Failure Considerations</h4>
+ * <p>
+ * Unlike concurrent {@link java.util.concurrent.CountDownLatch} implementations, this implementation is sensitive
+ * to node failure. In a concurrent world, if one thread fails, then the latch may not proceed, causing limited deadlocks,
+ * which may not be ideal, but are generally caused by manageable situations which can be accounted for. In the
+ * distributed environment, Node failures may occur at any time, for any number of reasons, some of which cannot be
+ * controlled or accounted for. In general, it is better, wherever possible, to allow barriers to proceed even in the
+ * face of such node failure scenarios.
+ * <p>
+ * To account for these scenarios, entering this barrier is considered <i>permanent</i>; even if the node subsequently (
+ * in the ZooKeeper ordering) fails, other members of the barrier will see this member as entered, allowing them to
+ * proceed.
+ * <p>
+ * Note, however, that if a node fails <i>before</i> it can enter the barrier, it will leave all parties
+ * waiting potentially indefinitely for the barrier to proceed. Only <i>after</i> a party has counted down
+ * (in the ZooKeeper-server-ordering) will other parties ignore that failure.
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 09-Dec-2010
- *          Time: 19:56:17
+ * @see java.util.concurrent.CyclicBarrier
  */
-public class ZkCyclicBarrier extends AbstractZkBarrier {
+public final class ZkCyclicBarrier extends AbstractZkBarrier {
     private static final char delimiter ='-';
     private static final String barrierPrefix="party";
 
     /**
-     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another node/thread
+     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another party
      * on the same latchNode.
      * <p>
      * This constructor uses Open, Unsafe ACL privileges.
@@ -72,7 +88,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     }
 
     /**
-     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another node/thread
+     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another party
      * on the same latchNode.
      * <p>
      * This constructor checks to ensure that the barrier is in a good state before returning. If the latchNode was the
@@ -86,7 +102,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
      * @param privileges the privileges for this latch
      * @param size the number of elements which must enter the barrier before threads may proceed.
      */
-    ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges) {
+    public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges) {
         super(size,barrierNode, zkSessionManager,privileges);
 
         ensureNodeExists();
@@ -104,25 +120,33 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     /**
      * Waits until all parties have been invoked on this barrier.
      * <p>
-     * If the current thread is not the last to arrive, then it is disabled for thread-scheduling purposes until one
-     * of the following conditions are realized:
+     * If the current thread is not the last to arrive, then it is disabled for thread-scheduling purposes and lies
+     * dormant until one of the following conditions are realized:
+     * <ol>
+     *      <li>The Last party arrives
+     *      <li>Some other thread interrupts the current thread
+     *      <li>Some other Thread interrupts one of the other waiting parties
+     *      <li>Some other party times out while waiting for the barrier
+     *      <li>Some other party invokes {@link #reset()} on this barrier
+     * </ol>
      * <p>
-     *  1.  The Barrier is reached by another thread/node
-     *  2.  Some other thread interrupts the current thread
-     *  3.  The Barrier has been broken by another party
-     *  4.  The Barrier has been reset by another party
-     *  5.  Some other party times out waiting for the barrier to complete
+     * If the current thread:
+     * <ul>
+     *      <li> has its interrupted status set on entry to this method; or
+     *      <li> is interrupted while waiting
+     * </ul>
+     *
+     * Then the Barrier is broken for all other parties, and an {@link InterruptedException}
+     * is thrown on this thread, clearing the current interrupted status.
      * <p>
-     * If the Barrier is broken upon entry into this method, or another party breaks the Barrier at any time while
-     * this thread is waiting, or another party times out while this thread is waiting,
-     *  a {@link java.util.concurrent.BrokenBarrierException} will be thrown.
+     * This Barrier is considered <i>broken</i> if one of the following conditions apply:
+     * <ol>
+     *      <li>Another party times out while waiting for the barrier
+     *      <li>Another party invoked {@link #reset()} on this barrier
+     *      <li>Another party received notification of a Thread Interruption
+     * </ol>
      * <p>
-     * If the Barrier is reset while this thread is waiting, then a {@link java.util.concurrent.BrokenBarrierException}
-     * will be thrown.
-     * <p>
-     * If the waiting thread is interrupted for reasons unrelated to ZooKeeper, then the state of the Barrier will
-     * be set to Broken, all other waiting parties will throw a BrokenBarrierException, and an InterruptedException
-     * will be thrown on this thread.
+     * If any of these situations occur, a {@link java.util.concurrent.BrokenBarrierException} is thrown.
      *
      * @return the index of this thread with respect to all other parties in the Barrier. If this thread is the
      *          first to arrive, index is {@link #getParties()}-1; the last thread to arrive will return 0
@@ -141,43 +165,57 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     }
 
     /**
-     * Waits until all parties have been invoked on this barrier.
+     * Waits until all parties have been invoked on this barrier, or until the maximum time has been reached.
      * <p>
-     * If the current thread is not the last to arrive, then it is disabled for thread-scheduling purposes until one
-     * of the following conditions are realized:
+     * If the current thread is not the last to arrive, then it is disabled for thread-scheduling purposes and lies
+     * dormant until one of the following conditions are realized:
+     * <ol>
+     *      <li>The Last party arrives
+     *      <li>Some other thread interrupts the current thread
+     *      <li>Some other Thread interrupts one of the other waiting parties
+     *      <li>Some other party times out while waiting for the barrier
+     *      <li>Some other party invokes {@link #reset()} on this barrier
+     *      <li>This thread reaches its time limit (set by {@code timeout}).
+     * </ol>
      * <p>
-     *  1.  The Barrier is reached by another thread/node
-     *  2.  Some other thread interrupts the current thread
-     *  3.  The Barrier has been broken by another party
-     *  4.  The Barrier has been reset by another party
-     *  5.  Some other party times out waiting for the barrier to complete
-     *  6.  This thread times out waiting for the barrier to complete
-     * <p>
-     * If the Barrier is broken upon entry into this method, or another party breaks the Barrier at any time while
-     * this thread is waiting, or another party times out while this thread is waiting,
-     *  a {@link java.util.concurrent.BrokenBarrierException} will be thrown.
-     * <p>
-     * If the Barrier is reset while this thread is waiting, then a {@link java.util.concurrent.BrokenBarrierException}
-     * will be thrown.
-     * <p>
-     * If the waiting thread is interrupted for reasons unrelated to ZooKeeper, then the state of the Barrier will
-     * be set to Broken, all other waiting parties will throw a BrokenBarrierException, and an InterruptedException
-     * will be thrown on this thread.
-     * <p>
-     * If this thread times out waiting for the barrier to complete, the barrier state will be set to broken (Causing a
-     * BrokenBarrierException to be thrown on all other parties), and a TimeoutException will be thrown.
+     * If the current thread:
+     * <ul>
+     *      <li> has its interrupted status set on entry to this method; or
+     *      <li> is interrupted while waiting
+     * </ul>
      *
-     * @param timeout the maximum time to wait
-     * @param unit the TimeUnit to use for timeouts.
+     * Then the Barrier is broken for all other parties, and an {@link InterruptedException}
+     * is thrown on this thread, clearing the current interrupted status.
+     * <p>
+     * This Barrier is considered <i>broken</i> if one of the following conditions apply:
+     * <ol>
+     *      <li>Another party times out while waiting for the barrier
+     *      <li>Another party invoked {@link #reset()} on this barrier
+     *      <li>Another party received notification of a Thread Interruption
+     * </ol>
+     * <p>
+     * If any of these situations occur, a {@link java.util.concurrent.BrokenBarrierException} is thrown.
+     * <p>
+     * If the maximum time is reached, and the barrier has not been completed, the barrier will be broken for
+     * all other parties, and a {@link java.util.concurrent.TimeoutException} will be thrown on this thread.
+     *
+     * @param timeout the maximum amount of time to wait for the barrier to complete
+     * @param unit the TimeUnit to use
      * @return the index of this thread with respect to all other parties in the Barrier. If this thread is the
      *          first to arrive, index is {@link #getParties()}-1; the last thread to arrive will return 0
      * @throws InterruptedException if the local thread is interrupted, or if there is a communication error
      *          with ZooKeeper
      * @throws BrokenBarrierException if another party breaks the barrier, or another party calls reset while
      *          waiting for the Barrier to complete
-     * @throws TimeoutException if this thread times out waiting for the barrier to complete.
+     * @throws java.util.concurrent.TimeoutException if the maximum wait time is exceeded before the Barrier can be
+     *          completed.
      */
     public long await(long timeout, TimeUnit unit) throws InterruptedException, BrokenBarrierException, TimeoutException {
+        if(Thread.interrupted()){
+            breakBarrier("A Party has been interrupted");
+            throw new InterruptedException();
+        }
+
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         String myNode;
         try {
@@ -196,22 +234,23 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
         } catch (KeeperException e) {
             throw new InterruptedException(e.getMessage());
         }
-        zkSessionManager.addConnectionListener(this);
+        zkSessionManager.addConnectionListener(connectionListener);
         while(true){
+            if(Thread.interrupted()){
+                breakBarrier("A Party has been interrupted");
+                throw new InterruptedException();
+            }
             localLock.lock();
             try {
                 if(isBroken()){
                     //barrier has been broken
-                    zkSessionManager.removeConnectionListener(this);
                     throw new BrokenBarrierException(new String(zooKeeper.getData(getBrokenPath(),false,new Stat())));
                 }else if(isReset(zooKeeper)){
-                    zkSessionManager.removeConnectionListener(this);
                     throw new BrokenBarrierException("The Barrier has been reset");
                 }
                 List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),barrierPrefix);
                 long count = children.size();
                 if(count>=total){
-                    zkSessionManager.removeConnectionListener(this);
                     //latch has been used, so remove latchReady key
                     if(zooKeeper.exists(getReadyPath(),false)!=null){
                         ZkUtils.safeDelete(zooKeeper,getReadyPath(),-1);
@@ -220,36 +259,38 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
                     ZkUtils.sortBySequence(children,delimiter);
                     return children.indexOf(myNode.substring(myNode.lastIndexOf("/")+1));
                 }else{
-                    try{
-                        boolean alerted = condition.await(timeout,unit);
-                        System.out.println("Thread-id="+Thread.currentThread().getName()+", Alerted="+alerted);
-                        if(!alerted){
-                            zkSessionManager.removeConnectionListener(this);
-                            breakBarrier("Timeout occurred waiting for barrier to complete");
-                            throw new TimeoutException("Timed out waiting for barrier to complete");
-                        }
-                    }catch(InterruptedException ie){
-                        //we've been interrupted locally, so we need to let everyone know
-                        zkSessionManager.removeConnectionListener(this);
-                        breakBarrier(ie.getMessage());
-                        throw ie;
+                    boolean alerted = condition.await(timeout,unit);
+                    System.out.println("Thread-id="+Thread.currentThread().getName()+", Alerted="+alerted);
+                    if(!alerted){
+                        breakBarrier("Timeout occurred waiting for barrier to complete");
+                        throw new TimeoutException("Timed out waiting for barrier to complete");
                     }
                 }
             } catch (KeeperException e) {
-                zkSessionManager.removeConnectionListener(this);
                 throw new InterruptedException(e.getMessage());
             } finally{
                 localLock.unlock();
+                zkSessionManager.removeConnectionListener(connectionListener);
             }
         }
     }
 
     /**
-     * @return the number of parties currently waiting for the barrier to complete.
+     * Gets the number of parties currently waiting on the Barrier.
+     * <p>
+     * Note that the returned value constitutes a snapshot of the state of this barrier at the time of invocation--It is
+     * possible that the current count of the barrier has changed during the execution of this method.
+     *
+     * @return the current count of the barrier.
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      */
     public long getNumberWaiting(){
         try {
-            return highestChild( ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,false),barrierPrefix),delimiter);
+            return ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,false),barrierPrefix).size();
         } catch (KeeperException e) {
             throw new RuntimeException(e);
         } catch (InterruptedException e) {
@@ -258,6 +299,9 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     }
 
     /**
+     * Gets the number of parties required before this barrier can proceed.
+     * <p>
+     *
      * @return the number of parties required to trip this barrier
      */
     public long getParties(){
@@ -265,6 +309,8 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     }
 
     /**
+     * Determines whether or not this barrier has been broken.
+     *
      * @return true if this barrier is broken.
      */
     public boolean isBroken(){
@@ -280,7 +326,8 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     /**
      * Resets this barrier.
      * <p>
-     * If any parties are waiting for this barrier when this method is called, a BrokenBarrierException will be thrown.
+     * If any parties are waiting for this barrier when this method is called,then the barrier will be broken,
+     * resulting in a {@link java.util.concurrent.BrokenBarrierException} to be thrown on those parties.
      * <p>
      * Note: It is recommended that only one party call this method at a time, to ensure consistency across the cluster.
      * This may be accomplished using a Leader-election protocol. It may be preferable to simply create a new
@@ -304,8 +351,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
         }
     }
 
-
-    /*------------------------------------------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------------------------------------------*/
     /*private helper methods*/
 
     /*
