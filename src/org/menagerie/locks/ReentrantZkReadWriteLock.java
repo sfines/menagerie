@@ -17,6 +17,7 @@ package org.menagerie.locks;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
@@ -83,6 +84,16 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
     public ReentrantZkReadWriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         readLock = new ReadLock(baseNode,zkSessionManager,privileges);
         writeLock = new WriteLock(baseNode,zkSessionManager,privileges);
+    }
+
+    /**
+     * Creates a new ZooKeeper-based ReadWrite lock with open, unsecured ACL privileges.
+     *
+     * @param baseNode the node to lock
+     * @param zkSessionManager the session manager to use
+     */
+    public ReentrantZkReadWriteLock(String baseNode, ZkSessionManager zkSessionManager) {
+        this(baseNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
     }
 
     /**

@@ -21,7 +21,7 @@ import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
-import org.menagerie.locks.ZkLocks;
+import org.menagerie.locks.ReentrantZkLock;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -157,7 +157,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         ensureNodeExists();
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         //TODO -sf- is there a non-blocking way to do this?
-        Lock lock = ZkLocks.newReentrantLock(zkSessionManager, baseNode, privileges);
+        Lock lock = new ReentrantZkLock(baseNode, zkSessionManager, privileges);
         try {
             lock.lock();
             clearState(zooKeeper,latchPrefix);
@@ -198,7 +198,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         ensureNodeExists();
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         //TODO -sf- is there a non-blocking way to do this?
-        Lock lock = ZkLocks.newReentrantLock(zkSessionManager, baseNode, privileges);
+        Lock lock = new ReentrantZkLock(baseNode, zkSessionManager, privileges);
         try {
             lock.lock();
             if(zooKeeper.exists(baseNode+"/countDown-latchReady",false)==null){

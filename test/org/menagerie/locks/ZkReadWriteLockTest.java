@@ -82,7 +82,7 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testNoWritesWithASingleRead() throws Exception{
-        ReadWriteLock lock = ZkLocks.newReadWriteLock(zkSessionManager,baseLockPath);
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
 
         Lock readLock = lock.readLock();
         final Lock writeLock = lock.writeLock();
@@ -112,7 +112,7 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testNoReadsWithSingleWrite() throws Exception{
-        ReadWriteLock lock = ZkLocks.newReadWriteLock(zkSessionManager,baseLockPath);
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
 
         final Lock readLock = lock.readLock();
         final Lock writeLock = lock.writeLock();
@@ -141,8 +141,8 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testMultipleReadsAllowed() throws Exception{
-        ReadWriteLock firstLock = ZkLocks.newReadWriteLock(zkSessionManager, baseLockPath);
-        ReadWriteLock secondLock = ZkLocks.newReadWriteLock(zkSessionManager,baseLockPath);
+        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
 
         final Lock firstReadLock = firstLock.readLock();
         final Lock secondReadLock = secondLock.readLock();
@@ -177,8 +177,8 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testOneWriteAllowed() throws Exception{
-        ReadWriteLock firstLock = ZkLocks.newReadWriteLock(zkSessionManager, baseLockPath);
-        ReadWriteLock secondLock = ZkLocks.newReadWriteLock(zkSessionManager,baseLockPath);
+        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
 
         final Lock firstWriteLock = firstLock.writeLock();
         final Lock secondWriteLock = secondLock.writeLock();

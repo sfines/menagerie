@@ -85,13 +85,13 @@ public class ReentrantZkLockTest {
     @Test(timeout = 1500l)
     public void testOnlyOneLockAllowedTwoThreads()throws Exception{
         final CountDownLatch latch = new CountDownLatch(1);
-        Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
         firstLock.lock();
         try{
             testService.submit(new Runnable() {
                 @Override
                 public void run() {
-                    Lock secondLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+                    Lock secondLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
                     secondLock.lock();
                     try{
                         latch.countDown();
@@ -112,13 +112,13 @@ public class ReentrantZkLockTest {
     @Test(timeout = 1500l)
     public void testReentrancy()throws Exception{
         final CountDownLatch latch = new CountDownLatch(1);
-        Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
         firstLock.lock();
         try{
             testService.submit(new Runnable() {
                 @Override
                 public void run() {
-                    Lock secondLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+                    Lock secondLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
                     secondLock.lock();
                     try{
                         latch.countDown();
@@ -146,7 +146,7 @@ public class ReentrantZkLockTest {
     @Test(timeout = 1500l)
     public void testMultipleThreadsCannotAccessSameLock()throws Exception{
         final CountDownLatch latch = new CountDownLatch(1);
-        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        final Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
         firstLock.lock();
         testService.submit(new Runnable() {
             @Override
@@ -173,8 +173,8 @@ public class ReentrantZkLockTest {
     @Test(timeout = 1000l)
     public void testMultipleClientsCannotAccessSameLock()throws Exception{
         final CountDownLatch latch = new CountDownLatch(1);
-        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
-        final Lock sameLock = ZkLocks.newReentrantLock(new BaseZkSessionManager(newZooKeeper()),baseLockPath);
+        final Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
+        final Lock sameLock = new ReentrantZkLock(baseLockPath, new BaseZkSessionManager(newZooKeeper()));
 
         firstLock.lock();
         testService.submit(new Runnable() {
@@ -200,7 +200,7 @@ public class ReentrantZkLockTest {
 
     @Test(timeout = 1500l)
     public void testConditionWaitsForSignalOtherThread() throws Exception{
-        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        final Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
         final Condition firstCondition = firstLock.newCondition();
 
         firstLock.lock();
@@ -228,7 +228,7 @@ public class ReentrantZkLockTest {
 
     @Test(timeout = 1500l)
     public void testConditionWaitsForSignalOtherClient() throws Exception{
-        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        final Lock firstLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
         final Condition firstCondition = firstLock.newCondition();
 
         firstLock.lock();
@@ -238,7 +238,7 @@ public class ReentrantZkLockTest {
             public void run() {
                 final Lock otherClientLock;
                 try {
-                    otherClientLock = ZkLocks.newReentrantLock(new BaseZkSessionManager(newZooKeeper()),baseLockPath);
+                    otherClientLock = new ReentrantZkLock(baseLockPath, new BaseZkSessionManager(newZooKeeper()));
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -264,7 +264,7 @@ public class ReentrantZkLockTest {
 
     @Test(timeout = 1000l)
     public void testConditionTimesOut() throws Exception{
-        Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        Lock firstLock = new ReentrantZkLock(baseLockPath,zkSessionManager);
         Condition firstCondition = firstLock.newCondition();
 
         firstLock.lock();

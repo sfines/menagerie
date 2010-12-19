@@ -17,6 +17,7 @@ package org.menagerie.locks;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
@@ -58,6 +59,17 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
 
     private final ThreadLocal<LockHolder> locks = new ThreadLocal<LockHolder>();
 
+
+    /**
+     * Constructs a new Lock on the specified node, using Open ACL privileges.
+     *
+     * @param baseNode the node to lock on
+     * @param zkSessionManager the session manager to use.
+     */
+    public ReentrantZkLock(String baseNode, ZkSessionManager zkSessionManager) {
+        super(baseNode, zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
+    }
+
     /**
      * Default Constructor, called by Subclasses.
      * <p>
@@ -69,6 +81,8 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
     public ReentrantZkLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         super(baseNode, zkSessionManager, privileges);
     }
+
+
 
     /**
      * Acquires the lock.

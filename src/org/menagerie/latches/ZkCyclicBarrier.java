@@ -22,7 +22,7 @@ import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
-import org.menagerie.locks.ZkLocks;
+import org.menagerie.locks.ReentrantZkLock;
 
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
@@ -266,7 +266,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
     public void reset(){
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         //TODO -sf- is there a non-blocking way to do this?
-        Lock lock = ZkLocks.newReentrantLock(zkSessionManager, baseNode, privileges);
+        Lock lock = new ReentrantZkLock(baseNode, zkSessionManager, privileges);
 
         try {
             lock.lock();
@@ -292,7 +292,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
         //determine if we need to reset the state of the barrier
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         //TODO -sf- is there a non-blocking way to do this?
-        Lock lock = ZkLocks.newReentrantLock(zkSessionManager, baseNode, privileges);
+        Lock lock = new ReentrantZkLock(baseNode, zkSessionManager, privileges);
 
         try {
             lock.lock();
