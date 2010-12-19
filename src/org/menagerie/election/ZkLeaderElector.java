@@ -33,8 +33,6 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 12-Dec-2010
- *          Time: 16:35:29
  */
 public final class ZkLeaderElector implements LeaderElector{
     private static final String electionPrefix = "election";
@@ -42,6 +40,13 @@ public final class ZkLeaderElector implements LeaderElector{
     private final String name;
     private final ElectionZkLock lock;
 
+    /**
+     * Constructs a new LeaderElector to enact Leader-Elections synchronously.
+     *
+     * @param baseNode the node to use for elections
+     * @param zkSessionManager the session manager to use
+     * @param privileges the privileges for this Elector.
+     */
     public ZkLeaderElector(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         this.lock = new ElectionZkLock(baseNode,zkSessionManager,privileges);
         try{
@@ -68,6 +73,9 @@ public final class ZkLeaderElector implements LeaderElector{
     }
 
     /**
+     * Returns the IP address of the leader node, as a String.
+     *
+     * @inheritDoc
      * @return the IP address of the leader node, as a String.
      */
     @Override
