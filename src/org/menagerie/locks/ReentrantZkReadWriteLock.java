@@ -68,7 +68,7 @@ import java.util.concurrent.locks.ReadWriteLock;
  * @version 1.0
  * @see java.util.concurrent.locks.ReentrantReadWriteLock
  */
-public class ReentrantZkReadWriteLock implements ReadWriteLock {
+public final class ReentrantZkReadWriteLock implements ReadWriteLock {
     private static final String readLockPrefix="readLock";
     private static final String writeLockPrefix="writeLock";
     private final ReadLock readLock;
@@ -116,7 +116,7 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
 
     public class ReadLock extends ReentrantZkLock{
 
-        protected ReadLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+        private ReadLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
             super(baseNode, zkSessionManager, privileges);
         }
 
@@ -181,7 +181,8 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
     }
 
     public class WriteLock extends ReentrantZkLock{
-        protected WriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+
+        private WriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
             super(baseNode, zkSessionManager, privileges);
         }
 

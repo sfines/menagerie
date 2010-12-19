@@ -17,6 +17,7 @@ package org.menagerie.latches;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
@@ -54,6 +55,26 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
      * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another node/thread
      * on the same latchNode.
      * <p>
+     * This constructor uses Open, Unsafe ACL privileges.
+     * <p>
+     * This constructor checks to ensure that the barrier is in a good state before returning. If the latchNode was the
+     * site of a previously broken barrier, then the Barrier is reset as if the {@link #reset()} method was called.
+     * <p>
+     * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
+     * used.
+     *
+     * @param zkSessionManager the ZkSessionManager to use
+     * @param barrierNode the node the execute the barrier under
+     * @param size the number of elements which must enter the barrier before threads may proceed.
+     */
+    public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager,String barrierNode) {
+        this(size,zkSessionManager,barrierNode, ZooDefs.Ids.OPEN_ACL_UNSAFE);
+    }
+
+    /**
+     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another node/thread
+     * on the same latchNode.
+     * <p>
      * This constructor checks to ensure that the barrier is in a good state before returning. If the latchNode was the
      * site of a previously broken barrier, then the Barrier is reset as if the {@link #reset()} method was called.
      * <p>
@@ -77,6 +98,8 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
             throw new RuntimeException(e);
         }
     }
+
+
 
     /**
      * Waits until all parties have been invoked on this barrier.

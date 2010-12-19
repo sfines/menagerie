@@ -41,7 +41,7 @@ import java.util.concurrent.locks.Condition;
  *          Date: 16-Dec-2010
  *          Time: 20:13:19
  */
-class ZkCondition extends ZkPrimitive implements Condition {
+final class ZkCondition extends ZkPrimitive implements Condition {
     private static final String conditionPrefix="condition";
     private static final char conditionDelimiter = '-';
     private final ReentrantZkLock distributedLock;

@@ -17,6 +17,7 @@ package org.menagerie.latches;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.menagerie.ZkSessionManager;
@@ -64,6 +65,20 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         ensureState();
     }
 
+    /**
+     * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
+     * previously created by another node/thread on the same latchNode, using Open, unsafe ACL privileges.
+     * <p>
+     * When this constructor returns, the Latch is guaranteed to be in a cluster- and thread-safe state which
+     * is ready to be used.
+     *
+     * @param total the number of elements which must countDown before threads may proceed.
+     * @param latchNode the node to execute the latch under
+     * @param zkSessionManager the ZkSessionManager to use
+     */
+    public ZkCountDownLatch(long total, String latchNode, ZkSessionManager zkSessionManager) {
+        this(total,latchNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
+    }
 
 
     /**
