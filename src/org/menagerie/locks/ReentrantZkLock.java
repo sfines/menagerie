@@ -56,7 +56,7 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
      */
     protected static final char lockDelimiter = '-';
 
-    private ThreadLocal<LockHolder> locks = new ThreadLocal<LockHolder>();
+    private final ThreadLocal<LockHolder> locks = new ThreadLocal<LockHolder>();
 
     /**
      * Default Constructor, called by Subclasses.
@@ -273,6 +273,19 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
      */
     public final boolean hasLock(){
         return locks.get()!=null;
+    }
+
+    /**
+     * Gets the name of the lock which this thread holds.
+     * <p>
+     * Note: This method will return {@code null} <i>unless</i> the current thread is the lock owner. This method
+     * is primarily intended to ease the use of shared lock implementations between threads, and should not be used
+     * to manage lock state.
+     *
+     * @return the name of the lock which this thread owns, or null.
+     */
+    protected final String getLockName(){
+        return locks.get().lockNode();
     }
 
     /**

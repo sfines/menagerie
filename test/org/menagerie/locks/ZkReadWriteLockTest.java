@@ -42,7 +42,7 @@ public class ZkReadWriteLockTest {
 
     private static ZooKeeper zk;
     private static final String baseLockPath = "/test-locks";
-    private static final int timeout = 200000;
+    private static final int timeout = 20000000;
     private static final ExecutorService testService = Executors.newFixedThreadPool(2);
 
     private static ZkSessionManager zkSessionManager;
@@ -217,14 +217,19 @@ public class ZkReadWriteLockTest {
         assertTrue("The Write lock was acquired improperly!",!acquired);
     }
 
-    @Test(timeout = 1000l)
+    @Test(timeout = 100000l)
     public void testDowngradingWriteLockToReadPossible() throws Exception{
-        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        ReentrantZkReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
         Lock writeLock = lock.writeLock();
         writeLock.lock();
 
         boolean acquired = lock.readLock().tryLock(250l, TimeUnit.MILLISECONDS);
         assertTrue("The Read lock was never acquired!",acquired);
+        writeLock.unlock();
+
+        //assert that the ReadLock still has it
+        boolean hasRead = lock.readLock().hasLock();
+        assertTrue("The Read lock does not have the lock anymore!",hasRead);
     }
 
 

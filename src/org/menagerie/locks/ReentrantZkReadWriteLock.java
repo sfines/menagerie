@@ -15,6 +15,7 @@
  */
 package org.menagerie.locks;
 
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
@@ -50,11 +51,17 @@ import java.util.concurrent.locks.ReadWriteLock;
  * all</i> methods obey ZooKeeper-ordering to determine when a lock may be acquired.
  * </blockquote>
  *<p>
- * Note: As of version 1.0, downgrading a WriteLock to a ReadLock without release is not supported. While this may
- * later be supported, it is initially difficult to reconcile downgrades with the strict ordering of requests that
- * ZooKeeper requires. It is better, at least at this stage, to treat a WriteLock as <i>also</i> a read lock, and perform
- * activities that are required. 
- *
+ * Note: Downgrading a WriteLock to a ReadLock is possible on the same thread. To do so, acquire the write lock, then
+ * acquire the read lock on the same thread. Finally, release the write lock. However, upgrading from a ReadLock to a
+ * WriteLock is <b>not</b> possible without first releasing the ReadLock.
+ * <p>
+ * Note also that the write lock provides a {@link java.util.concurrent.locks.Condition}implementation that
+ * behaves the same way with respect to the write lock as the {@link java.util.concurrent.locks.Condition}
+ * implementation provided by {@link ReentrantZkLock#newCondition()}. This condition may only be used
+ * for the WriteLock. The ReadLock does not support {@link Condition}s.
+ * <p>
+ * Note: This implementation supports only {@code Integer.MAX_VALUE} number of write and read locks. Attempts to
+ * exceed this will cause integer overflow, resulting in potentially improper Lock state.
  *
  * @author Scott Fines
  * @version 1.0
@@ -66,15 +73,32 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
     private final ReadLock readLock;
     private final WriteLock writeLock;
 
+    /**
+     * Constructs a new ReadWriteLock.
+     *
+     * @param baseNode the node to lock
+     * @param zkSessionManager the session manager to use
+     * @param privileges the ZooKeeper privileges to use
+     */
     public ReentrantZkReadWriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         readLock = new ReadLock(baseNode,zkSessionManager,privileges);
         writeLock = new WriteLock(baseNode,zkSessionManager,privileges);
     }
 
+    /**
+     * Gets the read lock associated with this lock.
+     *
+     * @return the read lock associated with this lock
+     */
     public ReadLock readLock(){
         return readLock;
     }
 
+    /**
+     * Gets the write lock associated with this lock.
+     *
+     * @return the write lock associated with this lock.
+     */
     public WriteLock writeLock(){
         return writeLock;
     }
@@ -89,6 +113,15 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
         protected boolean tryAcquireDistributed(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
             List<String> writeLocks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),writeLockPrefix);
             ZkUtils.sortBySequence(writeLocks,lockDelimiter); 
+
+            //if the writeLock is the one in the lead, then add the ReadLock to the same order and return true
+            if((baseNode+"/"+writeLocks.get(0)).equals(ReentrantZkReadWriteLock.this.writeLock.getLockName())){
+                //create a readLock node with the same number as the write lock's, and delete the lockNode, since
+                //we've automatically been upgraded to possession of the lock
+                zk.create(getBaseLockPath()+ZkUtils.parseSequenceNumber(writeLocks.get(0),lockDelimiter),emptyNode,privileges, CreateMode.EPHEMERAL);
+                zk.delete(lockNode,-1);
+                return true;
+            }
 
             long mySequenceNumber = ZkUtils.parseSequenceNumber(lockNode,lockDelimiter);
             //get all write Locks which are less than my sequence number
@@ -174,6 +207,7 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
             return true;
         }
 
+        
         @Override
         protected String getBaseLockPath() {
             return baseNode+"/"+writeLockPrefix+lockDelimiter;
