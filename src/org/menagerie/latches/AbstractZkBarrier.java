@@ -58,10 +58,14 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
      *          between the ZooKeeper service and this client.
      */
     protected final boolean doWait(long timeout, TimeUnit unit, String latchPrefix) throws InterruptedException{
+        if(Thread.interrupted())
+            throw new InterruptedException();
         //attach ourselves as a session listener
         zkSessionManager.addConnectionListener(this);
         boolean barrierReached;
-         while(true){
+        while(true){
+            if(Thread.interrupted())
+                throw new InterruptedException();
             localLock.lock();
             try {
                 List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),latchPrefix);
@@ -76,9 +80,7 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
                         barrierReached=false;
                         break;
                     }
-
                 }
-
             } catch (KeeperException e) {
                 throw new InterruptedException(e.getMessage());
             }finally{

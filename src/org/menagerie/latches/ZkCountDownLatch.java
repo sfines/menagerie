@@ -35,9 +35,8 @@ import java.util.concurrent.locks.Lock;
  * and adheres to as many of the same constraints as are reasonable to expect. Where this implementation differs,
  * a notation will be made in the javadoc for that method.
  * <p>
- * Note, however, that these latches are one-use-only tools--if repeated uses of the same instance are required,
- * consider using a {@link ZkCyclicBarrier} instead. However, multiple uses of the
- * same LatchNode <i>is</i> allowed
+ * Note that, unlike the concurrent version of this class, multiple uses of this class is allowed, so long as
+ * {@link #closeLatch()} is called between uses.
  *
  * @author Scott Fines
  * @version 1.0
@@ -82,9 +81,14 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
 
 
     /**
-     *  Decrements the count of the latch, releasing all waiting threads in the cluster when the count reaches zero.
+     *  Decrements the count of the latch, releasing all waiting parties when the count reaches zero.
      * <p>
      * If the current count of the latch is zero, this has no effect.
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      */
     public void countDown(){
         try{
@@ -101,7 +105,17 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
     }
 
     /**
+     * Gets the current count of the latch.
+     * <p>
+     * Note that the returned value constitutes a snapshot of the state of the Latch at the time of invocation--It is
+     * possible that the current count of the latch has changed during the execution of this method.
+     * 
      * @return the current count of the latch.
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      */
     public long getCount(){
         try {
@@ -120,15 +134,22 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * Causes the current thread to wait until the latch has counted down to zero, or until the current thread is
      * interrupted.
      * <p>
-     * If the current count of the latch is zero, this method returns immediately
+     * If the current count of the latch is zero, this method returns immediately.
      * <p>
      * If the current count of the latch is non-zero, the thread is disabled and lies dormant until one of two
      * things happen:
+     * <ol>
+     *  <li>the count reaches zero
+     *  <li>The current thread gets interrupted
+     * </ol>
      * <p>
-     *  1.the count reaches zero<br/>
-     *  2. The current thread gets interrupted
-     * <p>
-     * 
+     * If the current thread:
+     * <ul>
+     *  <li> has its interrupted status set on entry to this method; or
+     *  <li> is interrupted while waiting
+     * </ul>
+     * Then an {@link InterruptedException} is thrown and the thread's current Interrupted status is cleared.
+     *
      * @throws InterruptedException if the current thread is interrupted, or if communication between the ZooKeeper
      * client and server fails in some way
      */
@@ -150,6 +171,15 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      *  2. The current thread gets interrupted<br/>
      *  3. The specified timeout is reached without the latch counting down fully.
      * <p>
+     * If the current thread:
+     * <ul>
+     *  <li> has its interrupted status set on entry to this method; or
+     *  <li> is interrupted while waiting
+     * </ul>
+     * Then an {@link InterruptedException} is thrown and the thread's current Interrupted status is cleared.
+     * <p>
+     * If the specified waiting time elapses then the value {@code false} is returned. If the timne is less than
+     * or equals to zero, the method will not wait at all.
      *
      * @param timeout the maximum time to wait, in {@code unit} units.
      * @param unit the TimeUnit to use
@@ -166,6 +196,9 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * <p>
      * When this method is finished, all latch nodes relating to this latch will be removed, and the
      * state of the latchNode will be ready to accept new latches.
+     * <p>
+     * This method is here to allow callers to ensure the clean destruction of latches in the case where a latch
+     * uses permanent nodes.
      *
      */
     public void closeLatch() {
