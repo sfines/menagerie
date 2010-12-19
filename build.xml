@@ -71,6 +71,12 @@
         </javac>
     </target>
 
+    <target name="javadoc" depends="compile" description="Compiles the javadoc">
+        <javadoc packagenames="org.menagerie.*" sourcepath="src" defaultexcludes="yes" destdir="{$dir.docs.api}">
+
+        </javadoc>
+    </target>
+
     <target name="dist" depends="compile" description="Creates the Menagerie jars">
         <jar jarfile="${dir.dist}/menagerie.jar">
             <fileset dir="${dir.build.main}"/>
