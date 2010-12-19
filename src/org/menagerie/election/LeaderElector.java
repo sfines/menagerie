@@ -19,6 +19,21 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Interface for synchronously managing Leader Elections across distributed networks.
+ * <p><p>
+ * A typical usage for synchronous leader election is very similar to that of distributed locking, and would be
+ * <pre>
+ * {@code
+ *         LeaderElector elector = ...
+          if(elector.nominateSelfForLeader()){
+ *              try{
+ *                  //do your elected stuff
+                }finally{
+                    elector.concede();
+                }
+          }else{
+            //perform alternative action
+          }}
+   </pre>
  *
  * @author Scott Fines
  * @version 1.0
@@ -28,7 +43,14 @@ import java.util.concurrent.TimeUnit;
 public interface LeaderElector {
 
     /**
-     * Attempts to become the leader, returning immediately with either failure or success
+     * Attempts to become the leader, returning immediately with success or failure.
+     * <p>
+     * <p>
+     * If this party can become the leader immediately, then this method completes and returns true. Otherwise,
+     * another party is the current leader and this method will return false.
+     * <p>
+     * <p>
+     *
      * @return true if this thread is the leader
      */
     public boolean nominateSelfForLeader();
@@ -43,7 +65,7 @@ public interface LeaderElector {
      *      <li> Some other thread interrupts the current thread
      *      <li> the specified waiting time elapses
      * </ol>
-     *
+     * <br/>
      * If this party becomes the leader, the value true is returned.
      * <p><p>
      * 
