@@ -16,8 +16,8 @@
 package org.menagerie.locks;
 
 import org.apache.zookeeper.*;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 import org.menagerie.ZkSessionManager;
@@ -29,12 +29,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
 import static junit.framework.Assert.assertTrue;
 
 /**
- * TODO -sf- document!
+ * Unit tests for ReentrantZkLock
+ * <p>
+ * Note: These methods will not run without first having a ZooKeeper server started on {@code hostString}.
  *
  * @author Scott Fines
  * @version 1.0
@@ -43,22 +46,18 @@ import static junit.framework.Assert.assertTrue;
  */
 public class ReentrantZkLockTest {
 
-    private static ZooKeeper zk;
+    private static final String hostString = "localhost:2181";
     private static final String baseLockPath = "/test-locks";
-    private static final int timeout = 200000;
+    private static final int timeout = 2000;
     private static final ExecutorService testService = Executors.newFixedThreadPool(2);
 
+    private static ZooKeeper zk;
     private static ZkSessionManager zkSessionManager;
 
-    @BeforeClass
-    public static void setupBeforeClass() throws Exception {
+    @Before
+    public void setup() throws Exception {
 
-        zk = new ZooKeeper("localhost:2181", timeout,new Watcher() {
-            @Override
-            public void process(WatchedEvent event) {
-                System.out.println(event);
-            }
-        });
+        zk = newZooKeeper();
 
         //be sure that the lock-place is created
 
@@ -67,8 +66,8 @@ public class ReentrantZkLockTest {
         zkSessionManager = new BaseZkSessionManager(zk);
     }
 
-    @AfterClass
-    public static void tearDownAfterClass() throws Exception{
+    @After
+    public void tearDown() throws Exception{
         try{
             List<String> children = zk.getChildren(baseLockPath,false);
             for(String child:children){
@@ -199,9 +198,85 @@ public class ReentrantZkLockTest {
         assertTrue("The Lock was never acquired by another thread!",acquired);
     }
 
+    @Test(timeout = 1500l)
+    public void testConditionWaitsForSignalOtherThread() throws Exception{
+        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        final Condition firstCondition = firstLock.newCondition();
+
+        firstLock.lock();
+        //fire off a thread that will signal the main process thread
+        testService.submit(new Runnable() {
+            @Override
+            public void run() {
+                firstLock.lock();
+                System.out.println("Lock acquired on second thread");
+                try{
+                    firstCondition.signal();
+                    System.out.println("Lock signalled on second thread");
+                }finally{
+                    System.out.println("Lock released on second thread");
+                    firstLock.unlock();
+                }
+            }
+        });
+
+        //wait for signal notification
+        System.out.println("First thread waiting for notification");
+        firstCondition.await();
+        System.out.println("First thread has been notified");
+    }
+
+    @Test(timeout = 1500l)
+    public void testConditionWaitsForSignalOtherClient() throws Exception{
+        final Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        final Condition firstCondition = firstLock.newCondition();
+
+        firstLock.lock();
+        //fire off a thread that will signal the main process thread
+        testService.submit(new Runnable() {
+            @Override
+            public void run() {
+                final Lock otherClientLock;
+                try {
+                    otherClientLock = ZkLocks.newReentrantLock(new BaseZkSessionManager(newZooKeeper()),baseLockPath);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                final Condition otherClientCondition = otherClientLock.newCondition();
+                otherClientLock.lock();
+                System.out.println("Lock acquired on second thread");
+                try{
+                    otherClientCondition.signal();
+                    System.out.println("Lock signalled on second thread");
+                }finally{
+                    System.out.println("Lock released on second thread");
+                    otherClientLock.unlock();
+                }
+            }
+        });
+
+        //wait for signal notification
+        System.out.println("First thread waiting for notification");
+        firstCondition.await();
+        System.out.println("First thread has been notified");
+        firstLock.unlock();
+    }
+
+    @Test(timeout = 1000l)
+    public void testConditionTimesOut() throws Exception{
+        Lock firstLock = ZkLocks.newReentrantLock(zkSessionManager,baseLockPath);
+        Condition firstCondition = firstLock.newCondition();
+
+        firstLock.lock();
+        boolean timedOut = firstCondition.await(250l, TimeUnit.MILLISECONDS);
+        assertTrue("Condition did not time out!",!timedOut);
+        firstLock.unlock();
+    }
+
+
 
     private static ZooKeeper newZooKeeper() throws IOException {
-        return new ZooKeeper("localhost:2181", timeout,new Watcher() {
+        return new ZooKeeper(hostString, timeout,new Watcher() {
             @Override
             public void process(WatchedEvent event) {
                 System.out.println(event);

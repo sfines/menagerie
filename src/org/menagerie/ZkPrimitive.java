@@ -42,6 +42,8 @@ public class ZkPrimitive implements Watcher {
     protected final List<ACL> privileges;
     protected final Lock localLock = new ReentrantLock();
     protected final Condition condition = localLock.newCondition();
+    protected volatile boolean broken=false;
+    protected final ConnectionListener connectionListener = new PrimitiveConnectionListener();
 
     protected ZkPrimitive(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         if(baseNode==null)
@@ -101,5 +103,40 @@ public class ZkPrimitive implements Watcher {
     @Override
     public int hashCode() {
         return baseNode.hashCode();
+    }
+
+    protected void setConnectionListener(){
+        zkSessionManager.addConnectionListener(connectionListener);
+    }
+
+    protected void removeConnectionListener(){
+        zkSessionManager.removeConnectionListener(connectionListener);
+    }
+
+    protected class PrimitiveConnectionListener implements ConnectionListener{
+
+        @Override
+        public void syncConnected() {
+            //we had to connect to another server, and this may have taken time, causing us to miss our watcher, so let's
+            //signal everyone locally and see what we get.
+            localLock.lock();
+            try{
+                condition.signalAll();
+            }finally{
+                localLock.unlock();
+            }
+        }
+
+        @Override
+        public void expired() {
+            //indicate that this lock is broken, and alert all waiting threads to throw an Exception
+            broken=true;
+            localLock.lock();
+            try{
+                condition.signalAll();
+            }finally{
+                localLock.unlock();
+            }
+        }
     }
 }

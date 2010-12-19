@@ -29,7 +29,10 @@ import java.util.concurrent.locks.ReadWriteLock;
 
 
 /**
- * TODO -sf- document!
+ * ZooKeeper-based implementation of a <i>fair</i> Reentrant Read-Write lock.
+ * <p>
+ * This class adheres, wherever reasonable, to the idioms specified in
+ * {@link java.util.concurrent.locks.ReentrantReadWriteLock}.
  *
  * @author Scott Fines
  * @version 1.0
@@ -39,22 +42,20 @@ import java.util.concurrent.locks.ReadWriteLock;
 public class ReentrantZkReadWriteLock implements ReadWriteLock {
     private static final String readLockPrefix="readLock";
     private static final String writeLockPrefix="writeLock";
-    private final String baseNode;
-    private final ZkSessionManager zkSessionManager;
-    private final List<ACL> privileges;
+    private final ReadLock readLock;
+    private final WriteLock writeLock;
 
     public ReentrantZkReadWriteLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
-        this.baseNode = baseNode;
-        this.zkSessionManager = zkSessionManager;
-        this.privileges = privileges;
+        readLock = new ReadLock(baseNode,zkSessionManager,privileges);
+        writeLock = new WriteLock(baseNode,zkSessionManager,privileges);
     }
 
     public ReadLock readLock(){
-        return new ReadLock(baseNode,zkSessionManager,privileges);
+        return readLock;
     }
 
     public WriteLock writeLock(){
-        return new WriteLock(baseNode,zkSessionManager,privileges);
+        return writeLock;
     }
 
     public class ReadLock extends ReentrantZkLock{
@@ -102,6 +103,12 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
             return baseNode+"/"+readLockPrefix+lockDelimiter;
         }
 
+        /**
+         * Read Locks do not support Conditions, so this throws an UnsupportedOperationException
+         *
+         * @return nothing
+         * @throws UnsupportedOperationException always
+         */
         @Override
         public Condition newCondition() {
             throw new UnsupportedOperationException("Read Locks do not support conditions");

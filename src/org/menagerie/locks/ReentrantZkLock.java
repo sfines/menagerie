@@ -20,7 +20,6 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
-import org.menagerie.ConnectionListener;
 import org.menagerie.ZkPrimitive;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
@@ -50,40 +49,63 @@ import java.util.concurrent.locks.Lock;
  *          Date: 12-Dec-2010
  *          Time: 13:01:59
  */
-public class ReentrantZkLock extends ZkPrimitive implements Lock, ConnectionListener {
+public class ReentrantZkLock extends ZkPrimitive implements Lock {
     private static final String lockPrefix = "lock";
     protected static final char lockDelimiter = '-';
+    protected volatile boolean broken=false;
 
     private ThreadLocal<LockHolder> locks = new ThreadLocal<LockHolder>();
 
     protected ReentrantZkLock(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         super(baseNode, zkSessionManager, privileges);
-        zkSessionManager.addConnectionListener(this);
+
+        setConnectionListener();
     }
 
     @Override
     public final void lock() {
+        if (checkReentrancy()) return;
+        ZooKeeper zk = zkSessionManager.getZooKeeper();
+
+        String lockNode;
         try {
-            tryLock(-1,TimeUnit.MILLISECONDS);
+            lockNode = zk.create(getBaseLockPath(),emptyNode,privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
+
+            while(true){
+                if(broken)
+                    throw new RuntimeException("ZooKeeper Session has expired, invalidating this lock object");
+                localLock.lock();
+                try{
+                    //ask ZooKeeper for the lock
+                    boolean acquiredLock = askForLock(zk, lockNode,true);
+                    if(!acquiredLock){
+                        //we don't have the lock, so we need to wait for our watcher to fire
+                        //this method is not interruptible, so need to wait appropriately
+                        condition.awaitUninterruptibly();
+                    }else{
+                        //we have the lock, so return happy
+                        locks.set(new LockHolder(lockNode));
+                        return;
+                    }
+                } finally{
+                    localLock.unlock();
+                }
+            }
+        } catch (KeeperException e) {
+            throw new RuntimeException(e);
         } catch (InterruptedException e) {
-            //this will only be thrown by ZooKeeper-based utilities, by construction, so throw it as a runtime exception
             throw new RuntimeException(e);
         }
     }
 
     @Override
     public final void lockInterruptibly() throws InterruptedException {
-        //TODO -sf- should this do something different?
         tryLock(Long.MAX_VALUE,TimeUnit.DAYS);
     }
 
     @Override
     public final boolean tryLock() {
-        LockHolder local = locks.get();
-        if(local!=null){
-            local.incrementLock();
-            return true;
-        }
+        if (checkReentrancy()) return true;
         ZooKeeper zk = zkSessionManager.getZooKeeper();
         try {
             String lockNode = zk.create(getBaseLockPath(),emptyNode,privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
@@ -107,63 +129,69 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock, ConnectionList
     }
 
 
+    /**
+     *
+     * @param time the maximum time to wait, in milliseconds
+     * @param unit the TimeUnit to use
+     * @return true if the lock is acquired before the timeout expires
+     * @throws InterruptedException if one of the four following conditions hold:
+     *          <ol>
+     *              <li value="1">The Thread is interrupted upon entry to the method
+     *              <li value="2">Another thread interrupts this thread while it is waiting to acquire the lock
+     *              <li value="3">There is a communication problem between the ZooKeeper client and the ZooKeeper server.
+     *              <li value="4">The ZooKeeper session expires and invalidates this lock.
+     *          </ol>
+     *
+     * @see #tryLock(long, java.util.concurrent.TimeUnit)
+     */
     @Override
     public final boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
-        LockHolder local = locks.get();
-        if(local!=null){
-            local.incrementLock();
-            return true;
-        }
+
+        if(Thread.interrupted())
+            throw new InterruptedException();
+
+        if (checkReentrancy()) return true;
         ZooKeeper zk = zkSessionManager.getZooKeeper();
 
         String lockNode;
         try {
             lockNode = zk.create(getBaseLockPath(),emptyNode,privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
-        } catch (KeeperException e) {
-            throw new RuntimeException(e);
-        } catch(InterruptedException ie){
-            throw new RuntimeException(ie);
-        }
-        while(true){
-            boolean localAcquired = localLock.tryLock(time, unit);
-            try{
-                if(!localAcquired){
-                    //delete the lock node and return false
-                    zk.delete(lockNode,-1);
-                    return false;
-                }
-                //ask ZooKeeper for the lock
-                boolean acquiredLock = askForLock(zk, lockNode,true);
 
-                if(!acquiredLock){
-                    //we don't have the lock, so we need to wait for our watcher to fire
-                    if(time>0){
-                        //specified a timeout, so let's use it
+            while(true){
+                if(Thread.interrupted())
+                    throw new InterruptedException();
+                else if(broken){
+                    throw new InterruptedException("The ZooKeeper Session expired and invalidated this lock");
+                }
+                boolean localAcquired = localLock.tryLock(time, unit);
+                try{
+                    if(!localAcquired){
+                        //delete the lock node and return false
+                        zk.delete(lockNode,-1);
+                        return false;
+                    }
+                    //ask ZooKeeper for the lock
+                    boolean acquiredLock = askForLock(zk, lockNode,true);
+
+                    if(!acquiredLock){
+                        //we don't have the lock, so we need to wait for our watcher to fire
                         boolean alerted = condition.await(time, unit);
                         if(!alerted){
                             //we timed out, so delete the node and return false
-                            //delete the lock node and return false
                             zk.delete(lockNode,-1);
                             return false;
                         }
                     }else{
-                        //no timeout specified, so wait forever if necessary
-                        try{
-                            condition.await();
-                        }catch(InterruptedException ie){
-                            return false;
-                        }
+                        //we have the lock, so return happy
+                        locks.set(new LockHolder(lockNode));
+                        return true;
                     }
-                }else{
-                    //we have the lock, so return happy
-                    locks.set(new LockHolder(lockNode));
-                    return true;
+                } finally{
+                    localLock.unlock();
                 }
-            } catch (KeeperException e) {
-                throw new RuntimeException(e);
-            } finally{
-                localLock.unlock();
             }
+        } catch (KeeperException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -189,45 +217,28 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock, ConnectionList
                 throw new RuntimeException(e);
             } catch (KeeperException e) {
                 throw new RuntimeException(e);
+            } finally{
+                removeConnectionListener();
             }
         }
     }
 
     @Override
     public Condition newCondition() {
-        throw new UnsupportedOperationException("Conditions are not yet supported by ZooKeeper locks");
+        return new ZkCondition(baseNode,zkSessionManager,privileges,this);
     }
 
-    @Override
-    public void syncConnected() {
-        localLock.lock();
-        try{
-            condition.signalAll();
-        }finally{
-            localLock.unlock();
-        }
-    }
 
-    @Override
-    public synchronized void expired() {
-        //TODO -sf- this isn't right, gotta do something else
-        //our session expired, so all of our locks are gone, we'll need to re-acquire all of them
-        locks = new ThreadLocal<LockHolder>();
-        localLock.lock();
-        try{
-            condition.signalAll();
-        }finally{
-            localLock.unlock();
-        }
-    }
 
     /**
      * Asks ZooKeeper for a lock of a given type.
      * <p>
      * Classes which override this method MUST adhere to the requested watch rule, or else the semantics
-     * of the lock interface may be broken.
+     * of the lock interface may be broken. For example, if the {@code watch} parameter is true, then a watch
+     * MUST be set on SOMETHING by the end of this method.
      * <p>
-     * It is recommended that classes which override this method also override {@link #getBaseLockPath()} as well.
+     * It is recommended that classes which override this method also override {@link #getBaseLockPath()} and
+     * {@link #getLockPrefix()} as well.
      *
      * @param zk the ZooKeeper client to use
      * @param lockNode the node to lock on
@@ -279,6 +290,20 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock, ConnectionList
 
 /*-------------------------------------------------------------------------------------------------------------------*/
     /*private helper classes and methods*/
+
+    /*
+      Checks whether or not this party is re-entering a lock which it already owns.
+      If this party already owns the lock, this method increments the lock counter and returns true.
+      Otherwise, it return false.
+    */
+    private boolean checkReentrancy() {
+        LockHolder local = locks.get();
+        if(local!=null){
+            local.incrementLock();
+            return true;
+        }
+        return false;
+    }
 
     /*Holder for information about a specific lock*/
     private static class LockHolder{

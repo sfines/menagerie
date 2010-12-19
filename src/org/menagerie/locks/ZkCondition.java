@@ -97,12 +97,15 @@ class ZkCondition extends ZkPrimitive implements Condition {
         if(!distributedLock.hasLock())
             throw new IllegalMonitorStateException("await was called without owning the associated lock");
 
-        //put a signal node onto zooKeeper, then wait for it to be deleted
+
         try {
+            //release the associated zkLock
+            distributedLock.unlock();
+
+            //put a signal node onto zooKeeper, then wait for it to be deleted
             ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
             String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter, emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
-            //now release the associated zkLock
-            distributedLock.unlock();
+            
             long timeLeft  = nanosTimeout;
             while(true){
                 if(Thread.interrupted()){
@@ -125,7 +128,6 @@ class ZkCondition extends ZkPrimitive implements Condition {
                         return timeLeft;
                     }else if(zooKeeper.exists(conditionName,this)==null){
                         //we have been signalled, so relock and then return
-                        distributedLock.lock();
                         return timeLeft;
                     }else{
                         timeLeft = condition.awaitNanos(timeLeft);
@@ -136,6 +138,8 @@ class ZkCondition extends ZkPrimitive implements Condition {
             }
         } catch (KeeperException e) {
             throw new RuntimeException(e);
+        } finally{
+            distributedLock.lock();
         }
     }
 
@@ -191,7 +195,7 @@ class ZkCondition extends ZkPrimitive implements Condition {
         try {
             List<String> conditionsToSignal = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), conditionPrefix);
             if(conditionsToSignal.size()<=0)return; //no parties to signal
-            
+
             //notify all waiting conditions in sequence
             ZkUtils.sortBySequence(conditionsToSignal,conditionDelimiter);
 
