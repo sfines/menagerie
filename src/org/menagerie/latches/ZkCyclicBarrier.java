@@ -44,7 +44,7 @@ import java.util.concurrent.locks.Lock;
  * <p>
  * <h4> Node Failure Considerations</h4>
  * <p>
- * Unlike concurrent {@link java.util.concurrent.CountDownLatch} implementations, this implementation is sensitive
+ * Unlike concurrent {@link java.util.concurrent.CyclicBarrier} implementations, this implementation is sensitive
  * to node failure. In a concurrent world, if one thread fails, then the latch may not proceed, causing limited deadlocks,
  * which may not be ideal, but are generally caused by manageable situations which can be accounted for. In the
  * distributed environment, Node failures may occur at any time, for any number of reasons, some of which cannot be
