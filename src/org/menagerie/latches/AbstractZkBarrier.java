@@ -1,3 +1,18 @@
+/*
+ * Copyright 2010 Scott Fines
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package org.menagerie.latches;
 
 import org.apache.zookeeper.KeeperException;
@@ -39,15 +54,14 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
      * @param timeout the maximum time to wait
      * @param unit the time unit to wait in
      * @param latchPrefix the prefix for latch nodes to use
-     * @param latchDelimiter the delimiter separating the count from the node name
      * @return true if the barrier was successfully reached before the timeout was reached, false otherwise.
      * @throws InterruptedException if the current thread is interrupted, or if there is communication trouble
      *          between the ZooKeeper service and this client.
      */
-    protected final boolean doWait(long timeout, TimeUnit unit, String latchPrefix,char latchDelimiter) throws InterruptedException{
+    protected final boolean doWait(long timeout, TimeUnit unit, String latchPrefix) throws InterruptedException{
         //attach ourselves as a session listener
         zkSessionManager.addConnectionListener(this);
-        boolean barrierReached = false;
+        boolean barrierReached;
          while(true){
             localLock.lock();
             try {
@@ -110,7 +124,7 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
      * @throws KeeperException if there is trouble with the ZooKeeper Service(e.g. A ConnectionLoss, BadArguments, NoAuth, etc)
      * @throws InterruptedException if there is communication trouble with the ZooKeeper Service in mid-operation.
      */
-    protected final void clearState(ZooKeeper zk, String latchPrefix,char latchDelimiter) throws KeeperException, InterruptedException{
+    protected final void clearState(ZooKeeper zk, String latchPrefix) throws KeeperException, InterruptedException{
         List<String> latchChildren = ZkUtils.filterByPrefix(zk.getChildren(baseNode, false), latchPrefix);
 
         //clear out any old data

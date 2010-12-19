@@ -1,3 +1,18 @@
+/*
+ * Copyright 2010 Scott Fines
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package org.menagerie.latches;
 
 import org.apache.zookeeper.CreateMode;
@@ -30,7 +45,6 @@ import java.util.concurrent.locks.Lock;
  */
 public class ZkCountDownLatch extends AbstractZkBarrier {
     private static final String latchPrefix = "countDownLatch";
-    private static char latchDelimiter='-';
 
     /**
      * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
@@ -63,7 +77,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
             Must be Persistent_Sequential here instead of Ephemeral Sequential, because if a party counts down, then
             the zookeeper client loses its connection, the count down needs to not be lost
              */
-           zkSessionManager.getZooKeeper().create(baseNode+"/"+latchPrefix+latchDelimiter,emptyNode,privileges,CreateMode.PERSISTENT_SEQUENTIAL);
+           zkSessionManager.getZooKeeper().create(baseNode+"/"+latchPrefix+'-',emptyNode,privileges,CreateMode.PERSISTENT_SEQUENTIAL);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (KeeperException e) {
@@ -129,7 +143,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * client and server fails in some way
      */
     public boolean await(long timeout, TimeUnit unit)throws InterruptedException{
-        return doWait(timeout,unit,latchPrefix,latchDelimiter);
+        return doWait(timeout,unit,latchPrefix);
     }
 
     /**
@@ -146,7 +160,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         Lock lock = ZkLocks.newReentrantLock(zkSessionManager, baseNode, privileges);
         try {
             lock.lock();
-            clearState(zooKeeper,latchPrefix,latchDelimiter);
+            clearState(zooKeeper,latchPrefix);
             String readyNode = baseNode + "/countDown-latchReady";
             if(zooKeeper.exists(readyNode,false)!=null){
                 ZkUtils.safeDelete(zooKeeper,readyNode,-1);
@@ -188,7 +202,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         try {
             lock.lock();
             if(zooKeeper.exists(baseNode+"/countDown-latchReady",false)==null){
-                clearState(zooKeeper,latchPrefix,latchDelimiter);
+                clearState(zooKeeper,latchPrefix);
                 zooKeeper.create(baseNode+"/countDown-latchReady",emptyNode,privileges,CreateMode.PERSISTENT);
             }
         } catch (KeeperException e) {

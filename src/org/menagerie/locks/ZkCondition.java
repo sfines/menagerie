@@ -1,3 +1,19 @@
+/*
+ * Copyright 2010 Scott Fines
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ */
 package org.menagerie.locks;
 
 import org.apache.zookeeper.CreateMode;
@@ -13,8 +29,12 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 
+
+
 /**
- * TODO -sf- document!
+ * A ZooKeeper-based implementation of a {@link java.util.concurrent.locks.Condition}.
+ * <p><p>
+ * This class adheres to the idioms of the {@link java.util.concurrent.locks.Condition} interface wherever possible.
  *
  * @author Scott Fines
  * @version 1.0
@@ -36,11 +56,38 @@ class ZkCondition extends ZkPrimitive implements Condition {
         await(Long.MAX_VALUE,TimeUnit.DAYS);
     }
 
-
-
     @Override
     public void awaitUninterruptibly() {
-        //TODO -sf- implement!
+        if(!distributedLock.hasLock())
+            throw new IllegalMonitorStateException("await was called without owning the associated lock");
+
+        //put a signal node onto zooKeeper, then wait for it to be deleted
+        try {
+            ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
+            String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter, emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
+            //now release the associated zkLock
+            distributedLock.unlock();
+            while(true){
+                localLock.lock();
+                try{
+                    if(zooKeeper.exists(conditionName,this)==null){
+                        //we have been signalled, so relock and then return
+                        distributedLock.lock();
+                        return;
+                    }else{
+                        condition.awaitUninterruptibly();
+                    }
+                }finally{
+                    localLock.unlock();
+                }
+            }
+        } catch (KeeperException e) {
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            //this can only be thrown by ZooKeeper utilities, which indicates that a
+            //communication error between ZkServers and ZkClients occurred, so we had better throw it
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -58,6 +105,9 @@ class ZkCondition extends ZkPrimitive implements Condition {
             distributedLock.unlock();
             long timeLeft  = nanosTimeout;
             while(true){
+                if(Thread.interrupted()){
+                    throw new InterruptedException();
+                }
                 if(timeLeft<=0){
                     //timed out
                     zooKeeper.delete(conditionName,-1);
@@ -65,14 +115,9 @@ class ZkCondition extends ZkPrimitive implements Condition {
                 }
 
                 long start = System.nanoTime();
-                boolean acquired = localLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
+                localLock.lock();
 
                 try{
-                    if(!acquired){
-                        //delete the condition node myself
-                        zooKeeper.delete(conditionName,-1);
-                        return -1;
-                    }
                     long endTime = System.nanoTime();
                     timeLeft -= (endTime-start);
                     if(timeLeft<=0){
@@ -80,12 +125,8 @@ class ZkCondition extends ZkPrimitive implements Condition {
                         return timeLeft;
                     }else if(zooKeeper.exists(conditionName,this)==null){
                         //we have been signalled, so relock and then return
-                        boolean reacquired = distributedLock.tryLock(timeLeft, TimeUnit.NANOSECONDS);
-                        if(!reacquired){
-                            //timed out, so delete our condition node, since we aren't waiting any more
-                            zooKeeper.delete(conditionName,-1);
-                        }
-                        return -1;
+                        distributedLock.lock();
+                        return timeLeft;
                     }else{
                         timeLeft = condition.awaitNanos(timeLeft);
                     }
