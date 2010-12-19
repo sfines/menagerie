@@ -24,13 +24,11 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Utility class for manipulating ZooKeeper-related strings.
+ * Static utility class for manipulating ZooKeeper-related strings.
  * <p>
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 20-Nov-2010
- *          Time: 14:35:17
  */
 public class ZkUtils {
 
