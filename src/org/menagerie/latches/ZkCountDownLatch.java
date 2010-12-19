@@ -57,6 +57,11 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * @param latchNode the node to execute the latch under
      * @param zkSessionManager the ZkSessionManager to use
      * @param privileges the privileges for this latch
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      */
      ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         super(total, latchNode, zkSessionManager, privileges);
@@ -74,6 +79,11 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * @param total the number of elements which must countDown before threads may proceed.
      * @param latchNode the node to execute the latch under
      * @param zkSessionManager the ZkSessionManager to use
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      */
     public ZkCountDownLatch(long total, String latchNode, ZkSessionManager zkSessionManager) {
         this(total,latchNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
@@ -186,6 +196,8 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * @return true if the latch counted down fully before the timeout was reached, false otherwise. 
      * @throws InterruptedException if the current thread is interrupted, or if communication between the ZooKeeper
      * client and server fails in some way
+     * @throws RuntimeException wrapping a {@link org.apache.zookeeper.KeeperException} if the ZooKeeper server goes
+     *          wrong.
      */
     public boolean await(long timeout, TimeUnit unit)throws InterruptedException{
         return doWait(timeout,unit,latchPrefix);
@@ -199,6 +211,12 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
      * <p>
      * This method is here to allow callers to ensure the clean destruction of latches in the case where a latch
      * uses permanent nodes.
+     *
+     *@throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
      *
      */
     public void closeLatch() {
