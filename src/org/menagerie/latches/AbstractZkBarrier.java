@@ -16,7 +16,6 @@
 package org.menagerie.latches;
 
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.menagerie.ConnectionListener;
@@ -136,16 +135,6 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
                 if(ke.code()!=KeeperException.Code.NONODE)
                     throw ke;
             }
-        }
-    }
-
-    @Override
-    public void process(WatchedEvent event) {
-        localLock.lock();
-        try{
-            condition.signalAll();
-        }finally{
-            localLock.unlock();
         }
     }
 

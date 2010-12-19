@@ -27,13 +27,16 @@ import java.util.concurrent.Executors;
 
 /**
  * A Default implementation of a {@link ZkSessionManager}.
+ * <p>
+ * This implementation guarantees that all calls to {@code ConnectionListener}s will occur
+ * on a separate, dedicated thread which is provided by a ThreadExecutorService. The default constructions
+ * will create an ExecutorService for this, but the caller may specify a specific ExecutorService upon
+ * construction.
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 12-Dec-2010
- *          Time: 08:41:36
  */
-public class DefaultZkSessionManager implements ZkSessionManager, Watcher {
+public class DefaultZkSessionManager implements ZkSessionManager{
     private List<ConnectionListener> listeners = new CopyOnWriteArrayList<ConnectionListener>();
 
     private ZooKeeper zk;
@@ -42,12 +45,24 @@ public class DefaultZkSessionManager implements ZkSessionManager, Watcher {
     private final ExecutorService executor;
     private volatile boolean shutdown;
 
+    /**
+     * Creates a new instance of a DefaultZkSessionManager.
+     *
+     * @param connectionString the string to connect to ZooKeeper with (in the form of <serverIP>:<port>,...)
+     * @param timeout the timeout to use before expiring the ZooKeeper session.
+     */
     public DefaultZkSessionManager(String connectionString, int timeout) {
-        this.connectionString = connectionString;
-        this.timeout = timeout;
-        this.executor = Executors.newSingleThreadExecutor();
+        this(connectionString,timeout,Executors.newSingleThreadExecutor());
     }
 
+    /**
+     * Creates a new instance of a DefaultZkSessionManager, using the specified ExecutorService to handle
+     * ConnectionListener api calls.
+     *
+     * @param connectionString the string to connect to ZooKeeper with (in the form of <serverIP>:<port>,...)
+     * @param timeout the timeout to use before expiring the ZooKeeper session.
+     * @param executor the executor to use in constructing calling threads.
+     */
     public DefaultZkSessionManager(String connectionString, int timeout,ExecutorService executor) {
         this.connectionString = connectionString;
         this.timeout = timeout;
@@ -61,7 +76,7 @@ public class DefaultZkSessionManager implements ZkSessionManager, Watcher {
             throw new IllegalStateException("Cannot request a ZooKeeper after the session has been closed!");
         if(zk==null || zk.getState()==ZooKeeper.States.CLOSED){
             try {
-                zk = new ZooKeeper(connectionString,timeout,this);
+                zk = new ZooKeeper(connectionString,timeout,new SessionWatcher(this));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -95,19 +110,21 @@ public class DefaultZkSessionManager implements ZkSessionManager, Watcher {
         listeners.remove(listener);
     }
 
-    @Override
-    public void process(WatchedEvent event) {
-        final Event.KeeperState state = event.getState();
+/*--------------------------------------------------------------------------------------------------------------------*/
+    /*private helper methods */
+
+    private void notifyListeners(WatchedEvent event) {
+        final Watcher.Event.KeeperState state = event.getState();
         executor.submit(new Runnable() {
             @Override
             public void run() {
-                if(state==Event.KeeperState.Expired){
+                if(state== Watcher.Event.KeeperState.Expired){
                     //tell everyone that all their watchers and ephemeral nodes have been removed--suck
                     for(ConnectionListener listener:listeners){
                         listener.expired();
                     }
                     zk = null;
-                }else if(state==Event.KeeperState.SyncConnected){
+                }else if(state== Watcher.Event.KeeperState.SyncConnected){
                     //tell everyone that we've reconnected to the Server, and they should make sure that their watchers
                     //are in place
                     for(ConnectionListener listener:listeners){
@@ -117,4 +134,18 @@ public class DefaultZkSessionManager implements ZkSessionManager, Watcher {
             }
         });
     }
+
+    private static class SessionWatcher implements Watcher{
+        private final DefaultZkSessionManager manager;
+
+        private SessionWatcher(DefaultZkSessionManager manager) {
+            this.manager = manager;
+        }
+
+        @Override
+        public void process(WatchedEvent event) {
+            manager.notifyListeners(event);
+        }
+    }
+
 }

@@ -22,19 +22,20 @@ package org.menagerie;
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 12-Dec-2010
- *          Time: 08:40:55
  */
 public interface ConnectionListener {
 
     /**
-     * Fired to indicated that the ZooKeeperService has become connected after a disconnect event
+     * Fired to indicated that the ZooKeeper client has reconnected to the ZooKeeper service after having
+     * been disconnected, but before the session timeout has expired.
      */
     public void syncConnected();
 
     /**
-     * Fired to indicate that the ZooKeeper Service has expired and it is necessary to re-establish watchers
-     * and ephemeral nodes.
+     * Fired to indicate that the ZooKeeper Session has expired.
+     * <p>
+     * When this has been called, some data structures (any structure based on ephemeral nodes) may no longer be
+     * in a valid state.
      */
     public void expired();
 }

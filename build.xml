@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project name=" Ivy" basedir="."
+<project name="Menagerie" basedir="."
          xmlns:ivy="antlib:org.apache.ivy.ant">
 
     <property file="buildConfig.properties"/>
@@ -72,8 +72,18 @@
     </target>
 
     <target name="javadoc" depends="compile" description="Compiles the javadoc">
-        <javadoc packagenames="org.menagerie.*" sourcepath="src" defaultexcludes="yes" destdir="{$dir.docs.api}">
-
+        <mkdir dir="${dir.docs.api}"/>
+        <javadoc packagenames="org.menagerie.*"
+                 sourcepath="src"
+                 defaultexcludes="yes"
+                 destdir="${dir.docs.api}"
+                 author="true"
+                 version="true"
+                 use="true"
+                 windowtitle="Menagerie Javadoc API">
+            <doctitle><![CDATA[<h1>Menagerie API Documentation</h1>]]></doctitle>
+            <bottom><![CDATA[<i>Copyright 2010 Scott Fines. Released under the Apache 2.0 license.</i>]]></bottom>
+            <link href="http://download.oracle.com/javase/6/docs/api/"/>
         </javadoc>
     </target>
 
