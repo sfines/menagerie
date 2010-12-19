@@ -185,7 +185,7 @@ public class ZkCyclicBarrier extends AbstractZkBarrier {
                     zkSessionManager.removeConnectionListener(this);
                     throw new BrokenBarrierException("The Barrier has been reset");
                 }
-                List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,this),barrierPrefix);
+                List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),barrierPrefix);
                 long count = children.size();
                 if(count>=total){
                     zkSessionManager.removeConnectionListener(this);

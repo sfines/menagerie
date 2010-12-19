@@ -258,7 +258,7 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
         while(nextNodePos>=0){
             Stat stat;
             if(watch)
-                stat=zk.exists(baseNode+"/"+locks.get(nextNodePos),this);
+                stat=zk.exists(baseNode+"/"+locks.get(nextNodePos),signalWatcher);
             else
                 stat=zk.exists(baseNode+"/"+locks.get(nextNodePos),false);
             if(stat!=null){

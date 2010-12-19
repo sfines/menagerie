@@ -70,7 +70,7 @@ class ZkCondition extends ZkPrimitive implements Condition {
             while(true){
                 localLock.lock();
                 try{
-                    if(zooKeeper.exists(conditionName,this)==null){
+                    if(zooKeeper.exists(conditionName,signalWatcher)==null){
                         //we have been signalled, so relock and then return
                         distributedLock.lock();
                         return;
@@ -126,7 +126,7 @@ class ZkCondition extends ZkPrimitive implements Condition {
                     if(timeLeft<=0){
                         zooKeeper.delete(conditionName,-1);
                         return timeLeft;
-                    }else if(zooKeeper.exists(conditionName,this)==null){
+                    }else if(zooKeeper.exists(conditionName,signalWatcher)==null){
                         //we have been signalled, so relock and then return
                         return timeLeft;
                     }else{

@@ -64,7 +64,7 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
          while(true){
             localLock.lock();
             try {
-                List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,this),latchPrefix);
+                List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),latchPrefix);
 
                 long count = children.size();
                 if(count>=total){
@@ -141,12 +141,12 @@ abstract class AbstractZkBarrier extends ZkPrimitive implements ConnectionListen
     @Override
     public void syncConnected() {
         //pretend like the Watcher was just called to pick up any changes
-        this.process(null);
+        signalWatcher.process(null);
     }
 
     @Override
     public void expired() {
         //ensure that waiting threads try and re-establish themselves
-        this.process(null);
+        signalWatcher.process(null);
     }
 }

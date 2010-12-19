@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * ZooKeeper-based implementation of a Leader-election protocol.
+ * ZooKeeper-based implementation of a synchronous Leader-election protocol.
  * <p>
  *
  * @author Scott Fines
@@ -67,8 +67,11 @@ public final class ZkLeaderElector implements LeaderElector{
         lock.unlock();
     }
 
+    /**
+     * @return the IP address of the leader node, as a String.
+     */
     @Override
-    public String getLeaderIp() {
+    public String getLeader() {
         try {
             List<String> nominatedElements = ZkUtils.filterByPrefix(lock.getZooKeeper().getChildren(lock.getBaseNode(), false), electionPrefix);
             ZkUtils.sortBySequence(nominatedElements,electionDelimiter);

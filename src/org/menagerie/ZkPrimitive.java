@@ -35,7 +35,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *          Date: 09-Dec-2010
  *          Time: 20:10:01
  */
-public class ZkPrimitive implements Watcher {
+public class ZkPrimitive {
     protected static final byte[] emptyNode = new byte[]{};
     protected final ZkSessionManager zkSessionManager;
     protected final String baseNode;
@@ -44,6 +44,7 @@ public class ZkPrimitive implements Watcher {
     protected final Condition condition = localLock.newCondition();
     protected volatile boolean broken=false;
     protected final ConnectionListener connectionListener = new PrimitiveConnectionListener();
+    protected final Watcher signalWatcher = new SignallingWatcher(localLock,condition);
 
     protected ZkPrimitive(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         if(baseNode==null)
@@ -80,16 +81,6 @@ public class ZkPrimitive implements Watcher {
     }
 
     @Override
-    public void process(WatchedEvent event) {
-        localLock.lock();
-        try{
-            condition.signalAll();
-        }finally{
-            localLock.unlock();
-        }
-    }
-
-    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o.getClass()!=this.getClass()) return false;
@@ -97,7 +88,6 @@ public class ZkPrimitive implements Watcher {
         ZkPrimitive that = (ZkPrimitive) o;
 
         return baseNode.equals(that.baseNode);
-
     }
 
     @Override
@@ -134,6 +124,26 @@ public class ZkPrimitive implements Watcher {
             localLock.lock();
             try{
                 condition.signalAll();
+            }finally{
+                localLock.unlock();
+            }
+        }
+    }
+
+    private static class SignallingWatcher implements Watcher{
+        private final Lock localLock;
+        private final Condition localCondition;
+
+        private SignallingWatcher(Lock localLock, Condition localCondition) {
+            this.localLock = localLock;
+            this.localCondition = localCondition;
+        }
+
+        @Override
+        public void process(WatchedEvent event) {
+            localLock.lock();
+            try{
+                localCondition.signalAll();
             }finally{
                 localLock.unlock();
             }

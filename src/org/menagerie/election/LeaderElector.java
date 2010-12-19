@@ -34,7 +34,26 @@ public interface LeaderElector {
     public boolean nominateSelfForLeader();
 
     /**
-     * Attempts to become the leader, waiting on this thread up to a maximum of {@code timeout} units.
+     * Attempts to become the leader, waiting up to a maximum of {@code timeout} units.
+     * <p>
+     * If this party cannot become the leader, then the current thread becomes disabled for thread
+     * scheduling purposes and lies dormant until one of three things happen:
+     * <ol>
+     *      <li> This thread becomes the leader
+     *      <li> Some other thread interrupts the current thread
+     *      <li> the specified waiting time elapses
+     * </ol>
+     *
+     * If this party becomes the leader, the value true is returned.
+     * <p><p>
+     * 
+     * If the current thread
+     * <ul>
+     *      <li>has its interrupted status set on entry to this method
+     *      <li> is interrupted while undergoing election
+     * </ul>
+     * then an {@link InterruptedException} is thrown and the current thread's status is cleared. When this
+     * occurs, it is no longer possible for this thread to become the leader.
      *
      * @param timeout the maximum time to wait to become leader
      * @param unit the time units to use
@@ -44,15 +63,27 @@ public interface LeaderElector {
     public boolean nominateSelfForLeader(long timeout, TimeUnit unit) throws InterruptedException;
 
     /**
-     * Concedes the election to someone else.
+     * Concedes the election to another party.
      * <p>
-     * This MUST be called on the same thread as {@code nominateSelfForLeader} was called.
+     * This method may only be called by the party which <i>is</i> the current leader. Otherwise, an
+     * {@link IllegalMonitorStateException} will be thrown.
+     * <p>
+     * After this method has been called, the results of all previous calls to {@link #getLeader()} will no longer
+     * be valid.
+     *
+     * @throws IllegalMonitorStateException if this method is attempted to be called from a different thread than
+     *              the caller of {@link #nominateSelfForLeader()}.
      */
     public void concede();
 
     /**
-     * @return the IP address of the leader node
+     * Gets a string representation of the leader node. Often this is an IP address, but implementations may differ
+     * in what is returned.
+     * <p>
+     * Implementations should clearly indicate what in particular is being returned by this method.
+     *
+     * @return a String representation of the leader node
      */
-    public String getLeaderIp();
+    public String getLeader();
 
 }

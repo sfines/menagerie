@@ -87,7 +87,7 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
                 String lastWriteLock = aheadWriteLocks.remove(aheadWriteLocks.size() - 1);
                 Stat stat;
                 if(watch)
-                    stat = zk.exists(baseNode+"/"+ lastWriteLock,this);
+                    stat = zk.exists(baseNode+"/"+ lastWriteLock,signalWatcher);
                 else
                     stat = zk.exists(baseNode+"/"+ lastWriteLock,false);
                 if(stat!=null){
@@ -143,7 +143,7 @@ public class ReentrantZkReadWriteLock implements ReadWriteLock {
                 String lastReadLock = aheadLocks.remove(aheadLocks.size() - 1);
                 Stat stat;
                 if(watch)
-                    stat = zk.exists(baseNode+"/"+ lastReadLock,this);
+                    stat = zk.exists(baseNode+"/"+ lastReadLock,signalWatcher);
                 else
                     stat = zk.exists(baseNode+"/"+ lastReadLock,false);
                 if(stat!=null){
