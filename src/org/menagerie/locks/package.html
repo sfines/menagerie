@@ -1,0 +1,22 @@
+<body>
+
+<p>
+    ZooKeeper-based implementations of the {@link java.util.concurrent.locks} libraries.
+</p>
+
+<p>
+    Utility classes that are commonly useful in distributed, concurrent programming. This package contains
+standard implementations of the {@link java.util.concurrent.locks} libraries using ZooKeeper, as well as a few
+basic utilities which make creating and using such implementations easier. Here are brief descriptions of the main
+components.
+</p>
+
+<p>
+    <b>Implementations.</b> {@link org.menagerie.locks.ReentrantZkLock} provides the distributed equivalent of
+    {@link java.util.concurrent.locks.ReentrantLock}. It adheres to the {@link java.util.concurrent.locks.Lock} interface,
+    and support full reentrancy. {@link org.menagerie.locks.ReentrantZkReadWriteLock} provides the distributed equivalent
+    of {@link java.util.concurrent.locks.ReentrantReadWriteLock}, supporting fully reentrant read and write locks.
+</p>
+
+
+</body>

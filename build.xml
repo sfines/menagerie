@@ -72,23 +72,25 @@
         </javac>
     </target>
 
-    <target name="javadoc" description="Compiles the javadoc">
+    <target name="javadoc" depends="resolve.dependencies" description="Compiles the javadoc">
         <mkdir dir="${dir.docs.api}"/>
         <javadoc packagenames="org.menagerie.*"
-                 sourcepath="src"
+                 sourcepath="${dir.src}"
                  defaultexcludes="yes"
                  destdir="${dir.docs.api}"
                  author="true"
                  version="true"
                  use="true"
-                 windowtitle="Menagerie Javadoc API">
+                 windowtitle="Menagerie Javadoc API" classpathref="classpath.compile.main">
             <doctitle><![CDATA[<h1>Menagerie API Documentation</h1>]]></doctitle>
             <bottom><![CDATA[<i>Copyright 2010 Scott Fines. Released under the Apache 2.0 license.</i>]]></bottom>
             <link href="http://download.oracle.com/javase/6/docs/api/"/>
+            <!--ZooKeeper api-->
+            <link href="http://hadoop.apache.org/zookeeper/docs/r3.3.1/api/index.html"/>
         </javadoc>
     </target>
 
-    <target name="dist" depends="compile" description="Creates the Menagerie jars">
+    <target name="dist" depends="compile,javadoc" description="Creates the Menagerie jars">
         <jar jarfile="${dir.dist}/menagerie.jar">
             <fileset dir="${dir.build.main}"/>
             <manifest>
