@@ -62,36 +62,20 @@ import java.util.concurrent.locks.Lock;
 public class ZkCountDownLatch extends AbstractZkBarrier {
     private static final String latchPrefix = "countDownLatch";
 
-    /**
-     * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
-     * previously created by another node/thread on the same latchNode.
-     * <p>
-     * When this constructor returns, the Latch is guaranteed to be in a cluster- and thread-safe state which
-     * is ready to be used.
-     *
-     * @param total the number of elements which must countDown before threads may proceed.
-     * @param latchNode the node to execute the latch under
-     * @param zkSessionManager the ZkSessionManager to use
-     * @param privileges the privileges for this latch
-     * @throws RuntimeException wrapping:
-     * <ul>
-     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
-     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
-     * </ul>
-     */
-     public ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
-        super(total, latchNode, zkSessionManager, privileges);
+    private final CreateMode countDownMode;
 
-        ensureState();
-    }
 
-    /**
+     /**
      * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
      * previously created by another node/thread on the same latchNode, using Open, unsafe ACL privileges.
      * <p>
      * When this constructor returns, the Latch is guaranteed to be in a cluster- and thread-safe state which
      * is ready to be used.
-     *
+      * <p>
+     * This constructor defaults to tolerating node failures. Once a latch constructed in this manner has had a
+     * party count down against it, it will <i>always</i> be considered to have been counted down. To require all nodes
+     * to remain alive. use {@link #ZkCountDownLatch(long, String, org.menagerie.ZkSessionManager, java.util.List, boolean)}
+     * instead
      * @param total the number of elements which must countDown before threads may proceed.
      * @param latchNode the node to execute the latch under
      * @param zkSessionManager the ZkSessionManager to use
@@ -105,6 +89,60 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
         this(total,latchNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
     }
 
+    /**
+     * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
+     * previously created by another node/thread on the same latchNode.
+     * <p>
+     * When this constructor returns, the Latch is guaranteed to be in a cluster- and thread-safe state which
+     * is ready to be used.
+     * <p>
+     * This constructor defaults to tolerating node failures. Once a latch constructed in this manner has had a
+     * party count down against it, it will <i>always</i> be considered to have been counted down. To require all nodes
+     * to remain alive. use {@link #ZkCountDownLatch(long, String, org.menagerie.ZkSessionManager, java.util.List, boolean)}
+     * instead
+     * @param total the number of elements which must countDown before threads may proceed.
+     * @param latchNode the node to execute the latch under
+     * @param zkSessionManager the ZkSessionManager to use
+     * @param privileges the privileges for this latch
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
+     */
+     public ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+        this(total,latchNode,zkSessionManager,privileges,true);
+    }
+
+    /**
+     * Creates a new CountDownLatch on the specified latchNode, or joins a CountDownLatch which has been
+     * previously created by another node/thread on the same latchNode.
+     * <p>
+     * When this constructor returns, the Latch is guaranteed to be in a cluster- and thread-safe state which
+     * is ready to be used.
+     * <p>
+     * This constructor creates a CountDownLatch where the caller can choose between node-fault tolerance and algorithmic
+     * certainty. If {@code tolerateFailures} is set to true, then once a party has counted down against this latch, it
+     * will remain counted down, even if that party subsequently fails. To require that all parties remain alive until
+     * the latch has been reached, set {@code tolerateFailures} to false.
+     *
+     * @param total the number of elements which must countDown before threads may proceed.
+     * @param latchNode the node to execute the latch under
+     * @param zkSessionManager the ZkSessionManager to use
+     * @param privileges the privileges for this latch
+     * @param tolerateFailures set to {@code true} to ensure that nodes can progress once all parties have reported once;
+     *          set to false to require <i>all</i> parties to remain connected until the Latch has been filled.
+     * @throws RuntimeException wrapping:
+     * <ul>
+     *  <li> {@link org.apache.zookeeper.KeeperException} if the ZooKeeper Server has trouble with the requests
+     *  <li> {@link InterruptedException} if the ZooKeeper client has trouble communicating with the ZooKeeper service
+     * </ul>
+     */
+     public ZkCountDownLatch(long total,String latchNode, ZkSessionManager zkSessionManager, List<ACL> privileges,boolean tolerateFailures) {
+        super(total, latchNode, zkSessionManager, privileges);
+        this.countDownMode = tolerateFailures?CreateMode.PERSISTENT_SEQUENTIAL:CreateMode.EPHEMERAL_SEQUENTIAL;
+        ensureState();
+    }
 
     /**
      *  Decrements the count of the latch, releasing all waiting parties when the count reaches zero.
@@ -122,7 +160,7 @@ public class ZkCountDownLatch extends AbstractZkBarrier {
             Must be Persistent_Sequential here instead of Ephemeral Sequential, because if a party counts down, then
             the zookeeper client loses its connection, the count down needs to not be lost
              */
-           zkSessionManager.getZooKeeper().create(baseNode+"/"+latchPrefix+'-',emptyNode,privileges,CreateMode.PERSISTENT_SEQUENTIAL);
+           zkSessionManager.getZooKeeper().create(baseNode+"/"+latchPrefix+'-',emptyNode,privileges,countDownMode);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (KeeperException e) {

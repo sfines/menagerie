@@ -66,6 +66,7 @@ import java.util.concurrent.locks.Lock;
 public final class ZkCyclicBarrier extends AbstractZkBarrier {
     private static final char delimiter ='-';
     private static final String barrierPrefix="party";
+    private final CreateMode barrierMode;
 
     /**
      * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another party
@@ -78,6 +79,11 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * <p>
      * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
      * used.
+     *  <p>
+     * This constructor defaults to tolerating node failures. Once a Barrier constructed in this manner has had a
+     * party enter, that party will <i>always</i> be considered to have entered, even if that party subsequently fails.
+     *  To require all nodes to remain alive. use
+     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} instead
      *
      * @param zkSessionManager the ZkSessionManager to use
      * @param barrierNode the node the execute the barrier under
@@ -96,6 +102,11 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * <p>
      * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
      * used.
+     *  <p>
+     * This constructor defaults to tolerating node failures. Once a Barrier constructed in this manner has had a
+     * party enter, that party will <i>always</i> be considered to have entered, even if that party subsequently fails.
+     *  To require all nodes to remain alive. use
+     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} instead
      *
      * @param zkSessionManager the ZkSessionManager to use
      * @param barrierNode the node the execute the barrier under
@@ -103,8 +114,35 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * @param size the number of elements which must enter the barrier before threads may proceed.
      */
     public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges) {
-        super(size,barrierNode, zkSessionManager,privileges);
+        this(size,zkSessionManager,barrierNode,privileges,true);
+    }
 
+    /**
+     * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another party
+     * on the same latchNode.
+     * <p>
+     * This constructor checks to ensure that the barrier is in a good state before returning. If the latchNode was the
+     * site of a previously broken barrier, then the Barrier is reset as if the {@link #reset()} method was called.
+     * <p>
+     * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
+     * used.
+     * <p>
+     * This constructor creates a CyclicBarrier where the caller can choose between node-fault tolerance and algorithmic
+     * certainty. If {@code tolerateFailures} is set to true, then once a party has entered this latch, it
+     * will remain entered (with respect to the other parties), even if that party subsequently fails.
+     * To require that all parties remain alive until the latch has been reached, set {@code tolerateFailures} to false.
+     * 
+     * @param zkSessionManager the ZkSessionManager to use
+     * @param barrierNode the node the execute the barrier under
+     * @param privileges the privileges for this latch
+     * @param tolerateFailures set to {@code true} to allow the Barrier to proceed even if some parties fail after
+     *          entering the barrier. Set to false to require all parties to remain alive until the barrier is
+     *          completed.
+     * @param size the number of elements which must enter the barrier before threads may proceed.
+     */
+    public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges, boolean tolerateFailures) {
+        super(size,barrierNode, zkSessionManager,privileges);
+        this.barrierMode = tolerateFailures?CreateMode.PERSISTENT_SEQUENTIAL:CreateMode.EPHEMERAL_SEQUENTIAL;
         ensureNodeExists();
         try {
             checkReset();
@@ -230,7 +268,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
             should be, potentially causing the Barrier to never reach the total needed, resulting in a distributed
             deadlock.
             */
-            myNode = zooKeeper.create(getBarrierBasePath(), emptyNode, privileges, CreateMode.PERSISTENT_SEQUENTIAL);
+            myNode = zooKeeper.create(getBarrierBasePath(), emptyNode, privileges, barrierMode);
         } catch (KeeperException e) {
             throw new InterruptedException(e.getMessage());
         }

@@ -1,0 +1,39 @@
+<body>
+ZooKeeper-based distributed latches and barriers.
+
+<p>
+    Utilities Commonly used to control distributed algorithmic flow.
+</p>
+
+<p>
+    <b>Implementations.</b> {@link org.menagerie.latches.ZkCountDownLatch} provides a distributed equivalent to
+    {@link java.util.concurrent.CountDownLatch} which is tolerant to post-count-down node failure scenarios.
+    {@link org.menagerie.latches.ZkCyclicBarrier} provides a distributed equivalent to
+    {@link java.util.concurrent.CyclicBarrier}.
+</p>
+
+<br/>
+
+<p>
+    <b>Notes.</b> Distributed Barriers and latches are relatively dangerous tools to use, and without careful structuring,
+    can result in distributed deadlocks and poor failure-tolerance. <br/><br/>
+    One of the foremost challenges of distributed computing is dealing with failure of individual nodes without the
+    system as a whole failing. Since any node may fail at any time, it is essential to ensure that distributed algorithms
+    remain tolerant of this. When poorly used, distributed barriers can greatly reduce the tolerance of an algorithm to
+    failure of individual nodes. <br /><br/>
+    Take a naive CyclicBarrier implementation as an example. Suppose the following scenario occurs. Node A enters the
+    barrier, followed by Node B, and both Node A and Node B are waiting for Node C to enter before proceeding. Now Node A's
+    physical harddrive crashes, causing unexpected system death on Node A. Then Node C enters the barrier. A Naive CyclicBarrier
+    implementation which requires all nodes to be present would be prevented from proceeding, even though it is possible
+    to proceed. <br /><br/>
+    The implementations in this package have been designed to tolerate this kind of failure scenario, by making all
+    entries <i>permanent</i>. Once Node A has entered the barrier, Nodes B and C will <i>always</i> see Node A as
+    having entered, even if Node A fails catastrophically. This allows Nodes B and C to progress, even though Node A
+    cannot. <br /><br/>
+    However, some algorithms <i>require</i> a certain level of intolerance. To support this, we include optional flags
+    to turn off this tolerance behavior. These tend to be very fragile algorithms, and it is not recommended to use
+    this feature in general; the default is to use a tolerant behavior.
+</p>    
+
+
+</body>
