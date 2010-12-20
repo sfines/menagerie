@@ -240,9 +240,10 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
             lockNode = zk.create(getBaseLockPath(),emptyNode,privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
 
             while(true){
-                if(Thread.interrupted())
+                if(Thread.interrupted()){
+                    zk.delete(lockNode,-1);
                     throw new InterruptedException();
-                else if(broken){
+                }else if(broken){
                     throw new InterruptedException("The ZooKeeper Session expired and invalidated this lock");
                 }
                 boolean localAcquired = localLock.tryLock(time, unit);
