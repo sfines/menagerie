@@ -28,7 +28,7 @@ How to use:
 You find a situation where you want to use a Distributed Mutex Lock? call
 
     ZkSessionManager sessionManager = new DefaultZkSessionManager(myZooKeeperServers,myTimeout);
-    Lock myDistributedLock = ZkLocks.newReentrantLock(sessionManager,"/myLockPath");
+    Lock myDistributedLock = new ReentrantZkLock(sessionManager,"/myLockPath");
     myDistributedLock.lock();
     try{
     //now do your thing

@@ -91,15 +91,22 @@
     </target>
 
     <target name="dist" depends="compile,javadoc" description="Creates the Menagerie jars">
-        <jar jarfile="${dir.dist}/menagerie.jar">
+        <jar jarfile="${dir.dist}/menagerie-${build.version}.jar">
             <fileset dir="${dir.build.main}"/>
             <manifest>
                 <attribute name="branch" value="master"/>
                 <attribute name="build_time" value="${build.time}"/>
             </manifest>
         </jar>
-        <jar jarfile="${dir.dist}/menagerie-sources.jar">
+        <jar jarfile="${dir.dist}/menagerie-${build.version}-sources.jar">
             <fileset dir="${dir.build.tests}"/>
+            <manifest>
+                <attribute name="branch" value="master"/>
+                <attribute name="build_time" value="${build.time}"/>
+            </manifest>
+        </jar>
+        <jar jarfile="${dir.dist}/menagerie-${build.version}-javadoc.jar">
+            <fileset dir="${dir.docs.api}"/>
             <manifest>
                 <attribute name="branch" value="master"/>
                 <attribute name="build_time" value="${build.time}"/>
