@@ -109,6 +109,7 @@ final class ZkCondition extends ZkPrimitive implements Condition {
             long timeLeft  = nanosTimeout;
             while(true){
                 if(Thread.interrupted()){
+                    zooKeeper.delete(conditionName,-1);
                     throw new InterruptedException();
                 }
                 if(timeLeft<=0){
