@@ -96,8 +96,6 @@ final class ZkCondition extends ZkPrimitive implements Condition {
             throw new InterruptedException();
         if(!distributedLock.hasLock())
             throw new IllegalMonitorStateException("await was called without owning the associated lock");
-
-
         try {
             //release the associated zkLock
             distributedLock.unlock();
@@ -106,28 +104,21 @@ final class ZkCondition extends ZkPrimitive implements Condition {
             ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
             String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter, emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
             
-            long timeLeft  = nanosTimeout;
+            long timeLeft = nanosTimeout;
             while(true){
                 if(Thread.interrupted()){
                     zooKeeper.delete(conditionName,-1);
                     throw new InterruptedException();
                 }
-                if(timeLeft<=0){
-                    //timed out
-                    zooKeeper.delete(conditionName,-1);
-                    return -1;
-                }
+                if(checkTimeout(zooKeeper, conditionName, timeLeft)) return timeLeft;
 
                 long start = System.nanoTime();
                 localLock.lock();
-
                 try{
                     long endTime = System.nanoTime();
                     timeLeft -= (endTime-start);
-                    if(timeLeft<=0){
-                        zooKeeper.delete(conditionName,-1);
-                        return timeLeft;
-                    }else if(zooKeeper.exists(conditionName,signalWatcher)==null){
+                    if(checkTimeout(zooKeeper, conditionName, timeLeft)) return timeLeft;
+                    else if(zooKeeper.exists(conditionName,signalWatcher)==null){
                         //we have been signalled, so relock and then return
                         return timeLeft;
                     }else{
@@ -208,5 +199,18 @@ final class ZkCondition extends ZkPrimitive implements Condition {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    
+/*--------------------------------------------------------------------------------------------------------------------*/
+    /*private helper methods*/
+    private boolean checkTimeout(ZooKeeper zooKeeper, String nodeName, long timeLeft)
+                                                                    throws InterruptedException, KeeperException {
+        if(timeLeft<=0){
+            //timed out
+            zooKeeper.delete(nodeName,-1);
+            return true;
+        }
+        return false;
     }
 }
