@@ -64,7 +64,8 @@ final class ZkCondition extends ZkPrimitive implements Condition {
         //put a signal node onto zooKeeper, then wait for it to be deleted
         try {
             ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
-            String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter, emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
+            String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter,
+                                                            emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
             //now release the associated zkLock
             distributedLock.unlock();
             while(true){
@@ -102,7 +103,8 @@ final class ZkCondition extends ZkPrimitive implements Condition {
 
             //put a signal node onto zooKeeper, then wait for it to be deleted
             ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
-            String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter, emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
+            String conditionName = zooKeeper.create(baseNode + "/" + conditionPrefix + conditionDelimiter,
+                                                    emptyNode, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
             
             long timeLeft = nanosTimeout;
             while(true){
