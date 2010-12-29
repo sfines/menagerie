@@ -99,7 +99,7 @@
             </manifest>
         </jar>
         <jar jarfile="${dir.dist}/menagerie-${build.version}-sources.jar">
-            <fileset dir="${dir.build.tests}"/>
+            <fileset dir="${dir.src.tests}"/>
             <manifest>
                 <attribute name="branch" value="master"/>
                 <attribute name="build_time" value="${build.time}"/>

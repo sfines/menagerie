@@ -125,7 +125,9 @@ public class ZkPrimitive {
                 zooKeeper.create(baseNode,emptyNode,privileges, CreateMode.PERSISTENT);
             }
         } catch (KeeperException e) {
-            throw new RuntimeException(e);
+            //if the node already exists, then we are happy, so ignore those exceptions
+            if(e.code()!= KeeperException.Code.NODEEXISTS)
+                throw new RuntimeException(e);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
