@@ -125,8 +125,9 @@ public final class ReentrantZkReadWriteLock implements ReadWriteLock {
             List<String> writeLocks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),writeLockPrefix);
             ZkUtils.sortBySequence(writeLocks,lockDelimiter); 
 
+
             //if the writeLock is the one in the lead, then add the ReadLock to the same order and return true
-            if((baseNode+"/"+writeLocks.get(0)).equals(ReentrantZkReadWriteLock.this.writeLock.getLockName())){
+            if(writeLocks.size()>0&&(baseNode+"/"+writeLocks.get(0)).equals(ReentrantZkReadWriteLock.this.writeLock.getLockName())){
                 //create a readLock node with the same number as the write lock's, and delete the lockNode, since
                 //we've automatically been upgraded to possession of the lock
                 zk.create(getBaseLockPath()+ZkUtils.parseSequenceNumber(writeLocks.get(0),lockDelimiter),emptyNode,privileges, CreateMode.EPHEMERAL);
