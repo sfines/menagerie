@@ -17,8 +17,7 @@ package org.menagerie.latches;
 
 import org.apache.zookeeper.*;
 import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 
@@ -26,9 +25,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.*;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 /**
  *
@@ -40,13 +37,13 @@ import static org.junit.Assert.fail;
 public class ZkCyclicBarrierTest {
     private static ZooKeeper zk;
     private static final String baseBarrierPath = "/test-barriers";
-    private static final int timeout = 200000;
+    private static final int timeout = 5000;
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
 
     private ZkCyclicBarrier cyclicBarrier;
 
-    @BeforeClass
-    public static void setupBeforeClass() throws Exception {
+    @Before
+    public void setup() throws Exception {
         zk = newZooKeeper();
 
         //be sure that the lock-place is created
@@ -58,8 +55,8 @@ public class ZkCyclicBarrierTest {
         }
     }
 
-    @AfterClass
-    public static void tearDownAfterClass() throws Exception{
+    @After
+    public void tearDown() throws Exception{
         try{
             List<String> children = zk.getChildren(baseBarrierPath,false);
             for(String child:children){
@@ -73,10 +70,6 @@ public class ZkCyclicBarrierTest {
         }finally{
             zk.close();
         }
-    }
-
-    @After
-    public void tearDown() throws Exception{
     }
 
     @Test(timeout = 5000l)

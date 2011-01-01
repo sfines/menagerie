@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 
 /**
@@ -45,19 +46,36 @@ import java.util.concurrent.locks.Lock;
  * <h4> Node Failure Considerations</h4>
  * <p>
  * Unlike concurrent {@link java.util.concurrent.CyclicBarrier} implementations, this implementation is sensitive
- * to node failure. In a concurrent world, if one thread fails, then the latch may not proceed, causing limited deadlocks,
- * which may not be ideal, but are generally caused by manageable situations which can be accounted for. In the
- * distributed environment, Node failures may occur at any time, for any number of reasons, some of which cannot be
- * controlled or accounted for. In general, it is better, wherever possible, to allow barriers to proceed even in the
- * face of such node failure scenarios.
+ * to node failure. In a concurrent world, it is possible to guarantee that all parties will enter the barrier or will
+ * break the barrier, regardless of what else may occur. In a distributed world, external system events such as
+ * network partitions and node failures can cause parties to leave a barrier prematurely and uncleanly.
  * <p>
- * To account for these scenarios, entering this barrier is considered <i>permanent</i>; even if the node subsequently (
- * in the ZooKeeper ordering) fails, other members of the barrier will see this member as entered, allowing them to
- * proceed.
+ * To account for these scenarios, this implementation allows the caller to choose whether or not to tolerate external
+ * system failures.
  * <p>
- * Note, however, that if a node fails <i>before</i> it can enter the barrier, it will leave all parties
- * waiting potentially indefinitely for the barrier to proceed. Only <i>after</i> a party has counted down
- * (in the ZooKeeper-server-ordering) will other parties ignore that failure.
+ * If the choice is made to be tolerant to external system failures, then barrier entrance is considered
+ * <i>permanent</i>; even if the party subsequently (in the ZooKeeper ordering) fails, all other members of the barrier
+ * (including members yet to enter) will see that party as entered. This allows the still living members of the barrier
+ * to proceed, but may result in the barrier being considered completed when it should not have been.
+ * <p>
+ * If the choice is made to be intolerant to external system failures, then barrier entrance is
+ * considered <i>conditional</i>; if a party enters the barrier, then a system failure event occurs, another member
+ * will notice the failure and break the barrier. However, this conditional failure is contingent upon there <i>being</i>
+ * another barrier member present when the party fails. This leaves the possibility of a deadlock scenario; if a party
+ * enters the barrier and then fails (Zookeeper session timeout) <i>before any other party can
+ * enter the barrier</i>, then subsequent parties will not notice the existence and failure of that party, leading
+ * the count of parties to always be less than what is necessary to proceed. This scenario requires that the timing
+ * between members entering the barrier to be relatively high--there must be at least enough time between the
+ * first party and the second party entering for a ZooKeeper session to timeout. If this occurs regularly, then
+ * consider increasing the ZooKeeper timeout period for ZooKeeper clients.
+ * <p>
+ * If even a small risk of deadlocks are unacceptable, and false barrier-completions are acceptable, then instances
+ * of this class should call
+ * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean})
+ * with {@code tolerateFailures = true}. If a small risk of deadlocks is acceptable, or the ZooKeeper Session timeout
+ * is guaranteed to be long enough that the deadlock risk is not present, then instances may call any of the
+ * default constructors, or call {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)}
+ * with {@code tolerateFailures = false}.
  *
  * @author Scott Fines
  * @version 1.0
@@ -67,6 +85,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
     private static final char delimiter ='-';
     private static final String barrierPrefix="party";
     private final CreateMode barrierMode;
+    private final AtomicInteger localCount = new AtomicInteger(0);
 
     /**
      * Creates a new CyclicBarrier, or joins a CyclicBarrier which has been previously created by another party
@@ -80,10 +99,20 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
      * used.
      *  <p>
-     * This constructor defaults to tolerating node failures. Once a Barrier constructed in this manner has had a
-     * party enter, that party will <i>always</i> be considered to have entered, even if that party subsequently fails.
-     *  To require all nodes to remain alive. use
-     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} instead
+     * Note: This constructor creates a CyclicBarrier which is not tolerant to party failures. In this mode, a
+     * party which enters the Barrier may leave prematurely, due to an external system even such as a
+     * network failure; when this happens, the barrier will be broken.
+     * <p>
+     * However, being so intolerant to failures opens the possibility of deadlocks and timeouts in the following
+     * corner case: If Party A enters the barrier <i>before any other party</i>,
+     * then leaves the barrier due to some kind of system failure <i>before any other party can arrive</i>,
+     * subsequent parties will not see the entrance of Party A, and therefore may potentially timeout or deadlock.
+     * For this to happen, the Timings between individual Parties entering the barrier must be high enough to allow
+     * time for a ZooKeeper node creation to occur and a ZooKeeper session to expire before the next party may enter.
+     * In situations like these, increasing the zooKeeper timeout on individual ZooKeeper clients may fix the situation.
+     * When that is not possible, it is possible to set this CyclicBarrier to tolerate party failures, by using the
+     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} constructor
+     * instead of this.
      *
      * @param zkSessionManager the ZkSessionManager to use
      * @param barrierNode the node the execute the barrier under
@@ -103,10 +132,20 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * When this constructor returns, the latch is guaranteed to be in a clear, unbroken state and is ready to be
      * used.
      *  <p>
-     * This constructor defaults to tolerating node failures. Once a Barrier constructed in this manner has had a
-     * party enter, that party will <i>always</i> be considered to have entered, even if that party subsequently fails.
-     *  To require all nodes to remain alive. use
-     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} instead
+     * Note: This constructor creates a CyclicBarrier which is not tolerant to party failures. In this mode, a
+     * party which enters the Barrier may leave prematurely, due to an external system even such as a
+     * network failure; when this happens, the barrier will be broken.
+     * <p>
+     * However, being so intolerant to failures opens the possibility of deadlocks and timeouts in the following
+     * corner case: If Party A enters the barrier <i>before any other party</i>,
+     * then leaves the barrier due to some kind of system failure <i>before any other party can arrive</i>,
+     * subsequent parties will not see the entrance of Party A, and therefore may potentially timeout or deadlock.
+     * For this to happen, the Timings between individual Parties entering the barrier must be high enough to allow
+     * time for a ZooKeeper node creation to occur and a ZooKeeper session to expire before the next party may enter.
+     * In situations like these, increasing the zooKeeper timeout on individual ZooKeeper clients may fix the situation.
+     * When that is not possible, it is possible to set this CyclicBarrier to tolerate party failures, by using the
+     * {@link #ZkCyclicBarrier(long, org.menagerie.ZkSessionManager, String, java.util.List, boolean)} constructor
+     * instead of this.
      *
      * @param zkSessionManager the ZkSessionManager to use
      * @param barrierNode the node the execute the barrier under
@@ -114,7 +153,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * @param size the number of elements which must enter the barrier before threads may proceed.
      */
     public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges) {
-        this(size,zkSessionManager,barrierNode,privileges,true);
+        this(size,zkSessionManager,barrierNode,privileges,false);
     }
 
     /**
@@ -131,7 +170,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * certainty. If {@code tolerateFailures} is set to true, then once a party has entered this latch, it
      * will remain entered (with respect to the other parties), even if that party subsequently fails.
      * To require that all parties remain alive until the latch has been reached, set {@code tolerateFailures} to false.
-     * 
+     *
+     *
      * @param zkSessionManager the ZkSessionManager to use
      * @param barrierNode the node the execute the barrier under
      * @param privileges the privileges for this latch
@@ -165,6 +205,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      *      <li>Some other thread interrupts the current thread
      *      <li>Some other Thread interrupts one of the other waiting parties
      *      <li>Some other party times out while waiting for the barrier
+     *      <li>This barrier is intolerant of party failures, and some other party prematurely leaves the barrier
+     *          due to an external system event such as a network failure
      *      <li>Some other party invokes {@link #reset()} on this barrier
      * </ol>
      * <p>
@@ -181,6 +223,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * <ol>
      *      <li>Another party times out while waiting for the barrier
      *      <li>Another party invoked {@link #reset()} on this barrier
+     *      <li>Another party prematurely leaves the barrier due to an external system event such as a network failure,
+     *          and this barrier is set to be intolerant of party failures
      *      <li>Another party received notification of a Thread Interruption
      * </ol>
      * <p>
@@ -213,6 +257,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      *      <li>Some other Thread interrupts one of the other waiting parties
      *      <li>Some other party times out while waiting for the barrier
      *      <li>Some other party invokes {@link #reset()} on this barrier
+     *      <li>This barrier is intolerant of party failures, and some other party prematurely leaves the barrier
+     *          due to an external system event such as a network failure
      *      <li>This thread reaches its time limit (set by {@code timeout}).
      * </ol>
      * <p>
@@ -229,6 +275,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * <ol>
      *      <li>Another party times out while waiting for the barrier
      *      <li>Another party invoked {@link #reset()} on this barrier
+     *      <li>Another party prematurely leaves the barrier due to an external system event such as a network failure,
+     *          and this barrier is set to be intolerant of party failures
      *      <li>Another party received notification of a Thread Interruption
      * </ol>
      * <p>
@@ -249,11 +297,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      *          completed.
      */
     public long await(long timeout, TimeUnit unit) throws InterruptedException, BrokenBarrierException, TimeoutException {
-        if(Thread.interrupted()){
-            breakBarrier("A Party has been interrupted");
-            throw new InterruptedException();
-        }
-
+        checkAndBreakIfInterrupted();
         ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
         String myNode;
         try {
@@ -262,43 +306,50 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
                 //barrier has been broken
                 throw new BrokenBarrierException(new String(zooKeeper.getData(getBrokenPath(),false,new Stat())));
             }
-            /*
-            This must be Persistent_sequential instead of ephemeral_sequential because, if this thread creates this
-            element, then dies before the barrier is entered again, then the next count will be one smaller than it
-            should be, potentially causing the Barrier to never reach the total needed, resulting in a distributed
-            deadlock.
-            */
             myNode = zooKeeper.create(getBarrierBasePath(), emptyNode, privileges, barrierMode);
         } catch (KeeperException e) {
             throw new InterruptedException(e.getMessage());
         }
         zkSessionManager.addConnectionListener(connectionListener);
         while(true){
-            if(Thread.interrupted()){
-                breakBarrier("A Party has been interrupted");
-                throw new InterruptedException();
-            }
+            checkAndBreakIfInterrupted();
             localLock.lock();
             try {
                 if(isBroken()){
+                    //delete my node
+                    zooKeeper.delete(myNode,-1);
                     //barrier has been broken
                     throw new BrokenBarrierException(new String(zooKeeper.getData(getBrokenPath(),false,new Stat())));
                 }else if(isReset(zooKeeper)){
+                    //delete my node
+                    zooKeeper.delete(myNode,-1);
                     throw new BrokenBarrierException("The Barrier has been reset");
                 }
                 List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),barrierPrefix);
-                long count = children.size();
+                int count = children.size();
+                int currentLocalCount = localCount.get();
                 if(count>=total){
                     //latch has been used, so remove latchReady key
                     if(zooKeeper.exists(getReadyPath(),false)!=null){
                         ZkUtils.safeDelete(zooKeeper,getReadyPath(),-1);
                     }
+                    //delete my node
+                    zooKeeper.delete(myNode,-1);
                     //find this node
                     ZkUtils.sortBySequence(children,delimiter);
                     return children.indexOf(myNode.substring(myNode.lastIndexOf("/")+1));
+                }else if(count<currentLocalCount){
+                    /*
+                        This can only happen if you are using Ephemeral nodes, which can then be deleted by
+                        ZooKeeper in the case of client deaths. In this case, somebody prematurely left the barrier,
+                        so break it for everyone.
+                     */
+                    breakBarrier("Another party left the barrier prematurely!");
+                    zooKeeper.delete(myNode,-1);
+                    throw new BrokenBarrierException("Another party left the barrier prematurely!");
                 }else{
+                    localCount.set(count);
                     boolean alerted = condition.await(timeout,unit);
-                    System.out.println("Thread-id="+Thread.currentThread().getName()+", Alerted="+alerted);
                     if(!alerted){
                         breakBarrier("Timeout occurred waiting for barrier to complete");
                         throw new TimeoutException("Timed out waiting for barrier to complete");
@@ -312,6 +363,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
             }
         }
     }
+
+
 
     /**
      * Gets the number of parties currently waiting on the Barrier.
@@ -379,7 +432,6 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
         try {
             lock.lock();
             doReset(zooKeeper);
-
         } catch (KeeperException e) {
             throw new RuntimeException(e);
         } catch (InterruptedException e) {
@@ -406,6 +458,9 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
             if(isBroken()||isReset(zooKeeper)||zooKeeper.exists(getReadyPath(),false)==null){
                 //need to reset
                 doReset(zooKeeper);
+            }else{
+                //need to set the initial state of the localCounter
+                localCount.set(ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,false),barrierPrefix).size());
             }
         } catch (KeeperException e) {
             throw new RuntimeException(e);
@@ -413,6 +468,16 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
             throw new RuntimeException(e);
         }finally{
             lock.unlock();
+        }
+    }
+
+    /*Breaks the barrier if the current thread is interrupted, clearing the Thread's interrupted status in the
+        process
+     */
+    private void checkAndBreakIfInterrupted() throws InterruptedException {
+        if(Thread.interrupted()){
+            breakBarrier("A Party has been interrupted");
+            throw new InterruptedException();
         }
     }
 
@@ -447,13 +512,9 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * Breaks the barrier for all parties.
      */
     private void breakBarrier(String message) {
-        String threadName = Thread.currentThread().getName();
-        System.out.println(threadName+": Breaking barrier");
         if(!isBroken()){
-            System.out.println(threadName+": Barrier not already broken, breaking it now");
             try {
                 zkSessionManager.getZooKeeper().create(getBrokenPath(),message.getBytes(),privileges,CreateMode.PERSISTENT);
-                System.out.println(threadName+": Barrier broken");
             } catch (KeeperException e) {
                 //if the node already exists, someone else broke it first, so don't worry about it
                 if(e.code()!=KeeperException.Code.NODEEXISTS)
