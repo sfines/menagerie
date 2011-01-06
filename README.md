@@ -80,3 +80,5 @@ Contributors
 -----------
 
 Scott Fines
+scottfines@gmail.com
+twitter: scottfines
