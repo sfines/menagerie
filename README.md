@@ -68,6 +68,8 @@ ZooKeeper is capable of much more, and we plan to do the following in the next f
 * Distributed Event framework
 * Distributed Executor framework
 * Persistent Messaging Queues
+* Blocking Queues
+* Concurrent Maps
 
 If you think of something that you would like to see, please drop us a line so we can add it to the road map!
 
