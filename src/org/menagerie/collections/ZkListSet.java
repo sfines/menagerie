@@ -1,3 +1,18 @@
+/*
+ * Copyright 2010 Scott Fines
+ * <p>
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package org.menagerie.collections;
 
 import org.apache.zookeeper.CreateMode;
@@ -5,12 +20,16 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
+import org.menagerie.Beta;
 import org.menagerie.Serializer;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
 import org.menagerie.locks.ReentrantZkReadWriteLock;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.locks.ReadWriteLock;
 
 /**
@@ -21,7 +40,7 @@ import java.util.concurrent.locks.ReadWriteLock;
  * {@code putIfAbsent} behavior.
  * <p>
  * Note: This implementation relies upon global, synchronous locking on the baseNode. Therefore, this implementation
- * is the distributed equivalent of {@link java.util.Collections.synchronizedSet()}; 
+ * is the distributed equivalent of {@code java.util.Collections.synchronizedSet(java.util.Set)};
  * <p>
  * WARNING: This is <i>not</i> the most efficient implementation of a ZooKeeper Set. In the worst case, a traversal
  * of <i>all</i> the elements in this set must occur for a put, get, or remove operation to occur. A more efficient
@@ -32,6 +51,7 @@ import java.util.concurrent.locks.ReadWriteLock;
  *          Date: 09-Jan-2011
  *          Time: 20:01:49
  */
+@Beta
 public class ZkListSet<T> implements ZkSet<T> {
     private final String baseNode;
     private final ZkSessionManager sessionManager;

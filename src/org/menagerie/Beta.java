@@ -13,22 +13,19 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package org.menagerie.collections;
-
-import org.menagerie.Beta;
-
-import java.util.Set;
+package org.menagerie;
 
 /**
- * TODO -sf- document!
+ * Used to indicate that a particular feature is still under heavy development and should
+ * <i>not</i> be used in production.
+ * <p>
+ * Using a class marked with this annotation in production and having trouble is should not be considered
+ * unexpected. Use these classes <i>AT YOUR OWN RISK</i>
  *
  * @author Scott Fines
  * @version 1.0
  *          Date: 11-Jan-2011
- *          Time: 16:52:02
+ *          Time: 21:02:12
  */
-@Beta
-interface ZkSet<T> extends Set<T> {
-
-    ZkIterator<T> zkIterator();
+public @interface Beta {
 }
