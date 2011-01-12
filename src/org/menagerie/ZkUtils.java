@@ -15,8 +15,12 @@
  */
 package org.menagerie;
 
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -70,7 +74,7 @@ public class ZkUtils {
      * @param sequenceStartDelimiter the delimiter separating a node prefix from its sequence number
      * @return the sequence number of the given node
      */
-    public static long parseSequenceNumber(String node,char sequenceStartDelimiter){
+    public static int  parseSequenceNumber(String node,char sequenceStartDelimiter){
         if(node==null)throw new NullPointerException("No node specified!");
 
         int seqStartIndex = node.lastIndexOf(sequenceStartDelimiter);
@@ -79,7 +83,7 @@ public class ZkUtils {
                                                 "Node= <"+node+">, sequence delimiter=<"+sequenceStartDelimiter+">");
 
         String sequenceStr = node.substring(seqStartIndex+1);
-        return Long.parseLong(sequenceStr);
+        return Integer.parseInt(sequenceStr);
     }
 
     /**
@@ -114,17 +118,166 @@ public class ZkUtils {
      * @param zk the ZooKeeper client to use
      * @param nodeToDelete the node to delete
      * @param version the version of that node to remove
+     * @return true if the node was deleted
      * @throws KeeperException if some issue with the ZooKeeper server occurs
      * @throws InterruptedException if some communication error happens
      *                              between the ZooKeeper client and the ZooKeeper service
      */
-    public static void safeDelete(ZooKeeper zk, String nodeToDelete, int version)throws KeeperException, InterruptedException{
+    public static boolean safeDelete(ZooKeeper zk, String nodeToDelete, int version)throws KeeperException, InterruptedException{
         try {
             zk.delete(nodeToDelete,version);
+            return true;
         } catch (KeeperException ke) {
             //if the node has already been deleted, don't worry about it
             if(ke.code()!=KeeperException.Code.NONODE)
                 throw ke;
+            else
+                return false;
+        }
+    }
+
+    /**
+     * Deletes all the listed elements from ZooKeeper safely.
+     * <p>
+     * If any element has already been deleted from ZooKeeper, then a NoNode Exception is normally thrown by ZooKeeper.
+     * This method suppresses those exceptions, while allowing through all other kinds.
+     * <p>
+     * If ZooKeeper Exception which is <i>not</i> of the type NoNode, then it will be thrown immediately, and any
+     * elements which had not yet been deleted will not be deleted by this method.
+     *
+     * @param zk the ZooKeeper client to use
+     * @param nodesToDelete the nodes to delete
+     * @param version the version of the nodes to remove
+     * @throws KeeperException if some issue with the ZooKeeper server which is <i>not</i> of type NoNode occurs.
+     * @throws InterruptedException if some communication error happens between the ZooKeeper client and server
+     */
+    public static void safeDeleteAll(ZooKeeper zk, int version, String... nodesToDelete) throws KeeperException, InterruptedException {
+        for(String permitNode:nodesToDelete){
+            ZkUtils.safeDelete(zk,permitNode,version);
+        }
+    }
+
+     /**
+     * Deletes all the listed elements from ZooKeeper safely.
+     * <p>
+     * If any element has already been deleted from ZooKeeper, then a NoNode Exception is normally thrown by ZooKeeper.
+     * This method suppresses those exceptions, while allowing through all other kinds.
+     * <p>
+     * If ZooKeeper Exception which is <i>not</i> of the type NoNode, then it will be thrown immediately, and any
+     * elements (such as additional children) which had not yet been deleted will not be deleted by this method.
+     *
+     * @param zk the ZooKeeper client to use
+     * @param nodeToDelete the node to recursively delete
+     * @param version the version of the nodes to remove
+     * @throws KeeperException if some issue with the ZooKeeper server which is <i>not</i> of type NoNode occurs.
+     * @throws InterruptedException if some communication error happens between the ZooKeeper client and server
+     */
+    public static void recursiveSafeDelete(ZooKeeper zk, String nodeToDelete, int version) throws KeeperException, InterruptedException{
+        List<String> children = zk.getChildren(nodeToDelete,false);
+        for(String child: children){
+            recursiveSafeDelete(zk,nodeToDelete+"/"+child,version);
+        }
+        //delete this node
+        safeDelete(zk,nodeToDelete,version);
+    }
+
+    /**
+     * Creates a new node safely.
+     * <p>
+     * If a node already exists, ZooKeeper may throw a KeeperException of type {@code KeeperException.Code.NODEEXISTS}.
+     * This method suppresses that exception, allow creates of potentially contentious nodes to remain atomic.
+     * <p>
+     * If the node already exists, the data will <i>not</i> be set to that node. This reflects the fact that a
+     * create-and-set operation is not atomic, and may result in a data race. Instead, this method will quietly return.
+     * <p>
+     * If any other type of KeeperException is thrown, that exception will be propogated up the stack.
+     * <p>
+     * Note: If the CreateMode of the node of interest is sequential, then this method is unnecessary, as ZooKeeper
+     * will never throw a NODEEXISTS exception for modes of those types.
+     *
+     * @param zk the ZooKeeper client to use
+     * @param nodeToCreate the node to create
+     * @param data the data to set on the newly created node.
+     * @param privileges the privileges to associate with that node
+     * @param createMode the Mode that node will possess
+     * @return the name of the newly qualified node
+     * @throws KeeperException if an Error occurs on the ZooKeeper server which is <i>not</i> of type NODEEXISTS
+     * @throws InterruptedException if a communication error between the client and server occurs.
+     */
+    public static String safeCreate(ZooKeeper zk, String nodeToCreate,byte[] data, List<ACL> privileges, CreateMode createMode) throws KeeperException,InterruptedException {
+        try {
+            return zk.create(nodeToCreate,data,privileges,createMode);
+        } catch (KeeperException ke) {
+            //if the node has already been created, don't worry about it
+            if(ke.code()!=KeeperException.Code.NODEEXISTS)
+                throw ke;
+            else{
+                /*
+                This only happens if {@code createMode} is EPHEMERAL or PERSISTENT--sequential modes do not throw
+                this error code.
+
+                In the case that we are looking for EPHEMERAL or PERSISTENT, then we already know the full path
+                of the node we were trying to create, so just return that, since it already exists.
+                */
+                return nodeToCreate;
+            }
+
+        }
+    }
+
+    /**
+     * Attempts to get data from ZooKeeper in a single operation.
+     * <p>
+     *  Because it is possible that the node under request does not exist, it is possible that
+     * a KeeperException.NONODE exception will be thrown. This method swallows
+     * NONODE exceptions and returns an empty byte[] when that node does not exist.
+     *
+     * @param zk the ZooKeeper client
+     * @param node the node to get data for
+     * @param watcher any watcher to attach to this node, if it exists
+     * @param stat a stat object for use in the getData call
+     * @return the byte[] information contained in that node, if that node exists. If {@code node} does not exist,
+     *          then this returns an empty byte[]
+     *
+     * @throws InterruptedException if communication between the ZooKeeper client and servers are broken
+     * @throws KeeperException if there is a problem getting Data from the ZooKeeper server that <i>doesn't</i> have
+     *          the error code of NONODE
+     */
+    public static byte[] safeGetData(ZooKeeper zk, String node, Watcher watcher, Stat stat) throws InterruptedException, KeeperException {
+        try {
+            return zk.getData(node,watcher,stat);
+        } catch (KeeperException e) {
+            if(e.code()!=KeeperException.Code.NONODE)
+                throw e;
+            else
+                return new byte[]{};
+        }
+    }
+
+    /**
+     * Attempts to get data from ZooKeeper in a single operation. Because it is possible that the node under request
+     * does not exist, it is possible that a KeeperException.NONODE exception will be thrown. This method swallows
+     * NONODE exceptions and returns an empty byte[] when that node does not exist.
+     *
+     * @param zk the ZooKeeper client
+     * @param node the node to get data for
+     * @param watch true if the default watcher is to be attached to this node's data
+     * @param stat a stat object for use in the getData call
+     * @return the byte[] information contained in that node, if that node exists. If {@code node} does not exist,
+     *          then this returns an empty byte[]
+     *
+     * @throws InterruptedException if communication between the ZooKeeper client and servers are broken
+     * @throws KeeperException if there is a problem getting Data from the ZooKeeper server that <i>doesn't</i> have
+     *          the error code of NONODE
+     */
+    public static byte[] safeGetData(ZooKeeper zk, String node, boolean watch, Stat stat) throws InterruptedException, KeeperException {
+        try {
+            return zk.getData(node,watch,stat);
+        } catch (KeeperException e) {
+            if(e.code()!=KeeperException.Code.NONODE)
+                throw e;
+            else
+                return new byte[]{};
         }
     }
 
