@@ -82,5 +82,13 @@ Contributors
 -----------
 
 Scott Fines
-scottfines@gmail.com
+
+email: scottfines@gmail.com
+
 twitter: scottfines
+
+News:
+----------
+Jan 11, 2011: ZkSemaphore, a ZooKeeper-based implementation of a Semaphore, is now ready for the 1.0 release! 
+
+Jan 11, 2011: A ZooKeeper-based Implementation of a ConcurrentHashMap is coming soon! To see current progress, check out ZkHashMap. It is already mostly useable, but a few more features and more testing warrant development. 
