@@ -21,10 +21,7 @@ import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
-import org.menagerie.Beta;
-import org.menagerie.Serializer;
-import org.menagerie.ZkSessionManager;
-import org.menagerie.ZkUtils;
+import org.menagerie.*;
 import org.menagerie.locks.ReentrantZkLock;
 import org.menagerie.locks.ReentrantZkReadWriteLock;
 
@@ -34,29 +31,114 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 
 /**
- * TODO -sf- document!
+ * ZooKeeper-based implementation of a Concurrent HashMap.
+ * <p>
+ * This implementation is a ZooKeeper-based equivalent to {@link java.util.concurrent.ConcurrentHashMap}, with similar
+ * functional characteristics.
+ * <p>
+ * This implementation is a shared-access data-structure; Any number of readers are allowed concurrently, but only
+ * a fixed number of writers. The number of concurrent writers can be configured by using the
+ * {@link #ZkHashMap(String, org.menagerie.ZkSessionManager, java.util.List, org.menagerie.Serializer, int)} constructor.
+ * By default, up to 16 writers are allowed concurrently. Note, however, that just because up to 16 writers may be allowed,
+ * when two writers are attempting to modify the same data concurrently, contention will result, reducing the realistic
+ * number of writers concurrently allowed. Unlike in {@link java.util.concurrent.ConcurrentHashMap}, space is not a
+ * realistic concern governing the correct concurrency level in this implementation. Using a high concurrency level
+ * may result in less contention among writers, but will slow down operations which iterate over the collection, as
+ * more context switches may be required. Using a very low concurrency level, however, will result in higher contention
+ * for writers. It is generally preferred, but not required, that a power of 2 be chosen as the concurrency level.
+ * <p>
+ * It is important to note that setting this concurrency level flag asymmetrically over multiple ZooKeeper clients
+ * may result in data which is not accessible to some clients, while being accessible to others. In effect, if this
+ * concurrency level is set apart from the default value of 16, be sure to set it symmetrically across all ZooKeeper
+ * clients, or risk unexpected data loss scenarios.
+ *
+ * <p>Note: This implementation does NOT implement {@link java.io.Serializable}, since it stores its entries
+ * in a pre-serialized format in ZooKeeper, rather than locally.
+ * 
+ * <p>
+ * This class does <i>not</i> allow <tt>null</tt> to be used as a key or a value.
  *
  * @author Scott Fines
  * @version 1.0
+ * @param <K> the type of keys maintained by this map
+ * @param <V> the type of mapped values
  *          Date: 07-Jan-2011
  *          Time: 20:26:19
  */
 @Beta
-public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
+@ClusterSafe
+public final class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
     private final ZkSegment<K,V>[] segments;
     private final int segmentShift;
     private final int segmentMask;
 
+    /**
+     * Constructs a new HashMap with the specified ZooKeeper client and serializer, located at the specifed base znode
+     *<p>
+     * Note: {@code mapNode} <em>must </em> exist in zookeeper before calling this constructor, or else an exception
+     * will be thrown when first attempting to use this map.
+     *
+     * <p>This constructor builds a map which places all elements with
+     * the {@link org.apache.zookeeper.ZooDefs.Ids.OPEN_ACL_UNSAFE} privileges in ZooKeeper.
+     *
+     * @param mapNode the znode to use
+     * @param zkSessionManager the session manager for the ZooKeeper instance
+     * @param serializer the serializer to use
+     */
     public ZkHashMap(String mapNode, ZkSessionManager zkSessionManager,Serializer<Entry<K,V>> serializer){
         this(mapNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE,serializer);
     }
 
+    /**
+     * Constructs a new HashMap with the specified ZooKeeper client and serializer,
+     * located at the specifed base znode, and using the specified concurrency level
+     *<p>
+     * Note: {@code mapNode} <em>must </em> exist in zookeeper before calling this constructor, or else an exception
+     * will be thrown when first attempting to use this map.
+     *
+     * <p>This constructor builds a map which places all elements with
+     * the {@link org.apache.zookeeper.ZooDefs.Ids.OPEN_ACL_UNSAFE} privileges in ZooKeeper.
+     *
+     * @param mapNode the znode to use
+     * @param zkSessionManager the session manager for the ZooKeeper instance
+     * @param serializer the serializer to use
+     * @param concurrency the estimated number of concurrently updating parties.
+     */
+    public ZkHashMap(String mapNode, ZkSessionManager zkSessionManager,Serializer<Entry<K,V>> serializer, int concurrency){
+        this(mapNode,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE,serializer,concurrency);
+    }
+
+    /**
+     * Constructs a new HashMap with the specified ZooKeeper client and serializer,
+     * located at the specifed base znode, with the default concurrency level and the specified ZooKeeper privileges.
+     *<p>
+     * Note: {@code mapNode} <em>must </em> exist in zookeeper before calling this constructor, or else an exception
+     * will be thrown when first attempting to use this map.
+     *
+     * @param mapNode the znode to use
+     * @param zkSessionManager the session manager for the ZooKeeper instance
+     * @param privileges the ZooKeeper privileges to use
+     * @param serializer the serializer to use
+     */
     public ZkHashMap(String mapNode, ZkSessionManager zkSessionManager,
                      List<ACL> privileges, Serializer<Entry<K,V>> serializer) {
         this(mapNode, zkSessionManager,privileges,serializer,16);
     }
 
-    public ZkHashMap(String baseNode, ZkSessionManager zkSessionManager,
+    /**
+     * Constructs a new HashMap with the specified ZooKeeper client and serializer,
+     * located at the specifed base znode, with the specified concurrency level and ZooKeeper privileges.
+     *<p>
+     * Note: {@code mapNode} <em>must </em> exist in zookeeper before calling this constructor, or else an exception
+     * will be thrown when first attempting to use this map.
+     *
+     * @param mapNode the znode to use
+     * @param zkSessionManager the session manager for the ZooKeeper instance
+     * @param privileges the ZooKeeper privileges to use
+     * @param serializer the serializer to use
+     * @param concurrency the estimated number of concurrently updating parties.
+     */
+    public ZkHashMap(String mapNode, ZkSessionManager zkSessionManager,
                      List<ACL> privileges, Serializer<Entry<K,V>> serializer, int concurrency) {
         /*
         Shamelessly stolen from the implementation of ConcurrentHashMap
@@ -72,7 +154,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
         this.segments = ZkSegment.newArray(ssize);
 
         //need to build the map in a single, synchronized activity across all members
-        Lock mapLock = new ReentrantZkLock(baseNode,zkSessionManager,privileges);
+        Lock mapLock = new ReentrantZkLock(mapNode,zkSessionManager,privileges);
         mapLock.lock();
         try{
             //need to read the data out of zookeeper
@@ -80,18 +162,18 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             for(int i=0;i< segments.length;i++){
                 try {
                     //attach the first segments to any segments which are already created
-                    List<String> zkBuckets = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),"bucket");
+                    List<String> zkBuckets = ZkUtils.filterByPrefix(zk.getChildren(mapNode,false),"bucket");
                     ZkUtils.sortBySequence(zkBuckets,'-');
                     int numBucketsBuilt = 0;
                     for(int bucketIndex=0;bucketIndex<zkBuckets.size()&&bucketIndex< segments.length;bucketIndex++){
                         numBucketsBuilt++;
-                        segments[bucketIndex] = new ZkSegment<K,V>(baseNode+"/"+zkBuckets.get(bucketIndex),
+                        segments[bucketIndex] = new ZkSegment<K,V>(mapNode+"/"+zkBuckets.get(bucketIndex),
                                 serializer,zkSessionManager,privileges);
                     }
 
                     //create any additional segments as needed
                     while(numBucketsBuilt< segments.length){
-                        String bucketNode = ZkUtils.safeCreate(zk, baseNode + "/bucket-",
+                        String bucketNode = ZkUtils.safeCreate(zk, mapNode + "/bucket-",
                                 new byte[]{}, privileges, CreateMode.PERSISTENT_SEQUENTIAL);
                         segments[numBucketsBuilt] = new ZkSegment<K,V>(bucketNode,
                                 serializer,zkSessionManager,privileges);
@@ -140,7 +222,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
     @Override
     public int size() {
         int size=0;
-        for(ZkSegment<K,V> bucket: segments){
+        for(ZkSegment bucket: segments){
             int oldSize = size;
             size+=bucket.size();
             if(size<oldSize){
@@ -153,7 +235,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
 
     @Override
     public boolean isEmpty() {
-        for(ZkSegment<K,V> bucket: segments){
+        for(ZkSegment bucket: segments){
             if(!bucket.isEmpty())return false;
         }
         return true;
@@ -169,17 +251,17 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
     @Override
     public boolean containsValue(Object value) {
         //acquire all locks
-        for(ZkSegment<K,V> bucket: segments){
+        for(ZkSegment bucket: segments){
             bucket.acquireReadLock();
         }
         try{
-            for(ZkSegment<K,V> bucket: segments){
+            for(ZkSegment bucket: segments){
                 if(bucket.containsValue(value))
                     return true;
             }
             return false;
         }finally{
-            for(ZkSegment<K,V> bucket: segments){
+            for(ZkSegment bucket: segments){
                 bucket.releaseReadLock();
             }
         }
@@ -216,47 +298,43 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
 
     @Override
     public void clear() {
-        for (ZkSegment<K, V> bucket : segments)
+        for (ZkSegment bucket : segments)
             bucket.clear();
     }
 
     @Override
     public Set<K> keySet() {
-        Set<K> keySet = new HashSet<K>(segments.length);
-        for(ZkSegment<K,V> bucket: segments){
-            keySet.addAll(bucket.keys());
-        }
-        return Collections.unmodifiableSet(keySet);
+        return new KeySet();
     }
 
     @Override
     public Collection<V> values() {
-        Collection<V> values = new LinkedList<V>();
-        for(ZkSegment<K,V> bucket: segments){
-            values.addAll(bucket.values());
-        }
-        return Collections.unmodifiableCollection(values);
+        return new ValuesCollection();
     }
 
     /**
-     * Gets the entry set for this map.
-     * <p>
-     * The returned map has weakly-consistent iterators. That is, changes made to the underlying map after the
-     * iterator has been created will reflect the state of the map at creation time, and <i>may</i> (but is not
-     * guaranteed to) reflect changes to the map made afterwards.
-     * <p>
-     * The returned map is read-only
-     * @return a unmodifiable, Live-view of the entries in this map.
+     * Returns a {@link Set} view of the mappings contained in this map.
+     * The set is backed by the map, so changes to the map are
+     * reflected in the set, and vice-versa.  The set supports element
+     * removal, which removes the corresponding mapping from the map,
+     * via the <tt>Iterator.remove</tt>, <tt>Set.remove</tt>,
+     * <tt>removeAll</tt>, <tt>retainAll</tt>, and <tt>clear</tt>
+     * operations.  It does not support the <tt>add</tt> or
+     * <tt>addAll</tt> operations.
+     *
+     * <p>The view's <tt>iterator</tt> is a "weakly consistent" iterator
+     * that will never throw {@link ConcurrentModificationException},
+     * and guarantees to traverse elements as they existed upon
+     * construction of the iterator, and may (but is not guaranteed to)
+     * reflect any modifications subsequent to construction.
      */
     @Override
     public Set<Entry<K, V>> entrySet() {
-        
-        Set<Entry<K,V>> entrySet = new HashSet<Entry<K,V>>(segments.length);
-        for(ZkSegment<K,V> bucket: segments){
-            entrySet.addAll(bucket.entries());
-        }
-        return Collections.unmodifiableSet(entrySet);
+        return new EntrySet();
     }
+
+/*-------------------------------------------------------------------------------------------------------------------*/
+    /*private helper methods and classes*/
 
     /*
      * Applies a supplemental hash function to a given hashCode, which
@@ -264,6 +342,8 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
      * because ZkHashMap uses power-of-two length hash tables,
      * that otherwise encounter collisions for hashCodes that do not
      * differ in lower or upper bits.
+     *
+     * -sf- stolen shamelessly from the ConcurrentHashMap.
      */
     private static int hash(int h) {
         // Spread bits to regularize both segment and index locations,
@@ -276,16 +356,27 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
         return h ^ (h >>> 16);
     }
 
-    private static final class ZkSegment<T,V>{
+    /*Finds the bucket which holds the data for the given hashCode*/
+    private ZkSegment<K,V> bucketFor(int hash) {
+        return segments[(hash >>> segmentShift) & segmentMask];
+    }
+
+    /*
+     * Represents a chunk of the data stored in the Map. Each element which
+     * is inserted into the containing map is hashed to a particular segment, which then manages
+     * how to store that element in a specialized znode under the base mapNode.
+     *
+     */
+    private static final class ZkSegment<K,V>{
         private static final String entryPrefix = "entry";
         private static final char entryDelimiter = '-';
         private final String bucketNode;
         private final ZkSessionManager sessionManager;
         private final List<ACL> nodePrivileges;
         private final ReadWriteLock safety;
-        private final Serializer<Entry<T,V>> serializer;
+        private final Serializer<Entry<K,V>> serializer;
 
-        private ZkSegment(String bucketNode, Serializer<Entry<T,V>> serializer,
+        private ZkSegment(String bucketNode, Serializer<Entry<K,V>> serializer,
                           ZkSessionManager sessionManager, List<ACL> nodePrivileges) {
             this.bucketNode = bucketNode;
             this.sessionManager = sessionManager;
@@ -304,7 +395,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
                 for(String match: hashMatches){
                     byte[] data = ZkUtils.safeGetData(zk, bucketNode + "/" + match, false, new Stat());
                     if(data.length>0){
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)){
                             return deserializedEntry.getValue();
                         }
@@ -326,11 +417,11 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             try{
                 ZooKeeper zk = sessionManager.getZooKeeper();
                 List<String> hashMatches = ZkUtils.filterByPrefix(zk.getChildren(bucketNode, false), getHashedPrefix(hash));
+                
                 for(String match: hashMatches){
-                    Stat exists = zk.exists(bucketNode+"/"+match,false);
-                    if(exists!=null){
-                        byte[] data = zk.getData(bucketNode+"/"+match,false,exists);
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                    byte[] data = ZkUtils.safeGetData(zk, bucketNode + "/" + match, false, new Stat());
+                    if(data.length>0){
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)){
                             return true;
                         }
@@ -356,7 +447,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
                     Stat exists = zk.exists(bucketNode+"/"+match,false);
                     if(exists!=null){
                         byte[] data = zk.getData(bucketNode+"/"+match,false,exists);
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getValue().equals(value)){
                             return true;
                         }
@@ -372,7 +463,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             }
         }
 
-        boolean replace(T key,int hash, V oldValue, V newValue){
+        boolean replace(K key,int hash, V oldValue, V newValue){
             Lock writeLock = safety.writeLock();
             writeLock.lock();
             try{
@@ -383,10 +474,10 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
                     Stat exists = zk.exists(bucketNode+"/"+match,false);
                     if(exists!=null){
                         byte[] data = zk.getData(bucketNode+"/"+match,false,exists);
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)&&deserializedEntry.getValue().equals(oldValue)){
                             //we can set the value
-                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<T,V>(key,newValue)),-1);
+                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<K,V>(key,newValue)),-1);
                             return true;
                         }
                     }
@@ -401,7 +492,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             }
         }
 
-        V replace(T key, int hash, V newValue){
+        V replace(K key, int hash, V newValue){
             Lock writeLock = safety.writeLock();
             writeLock.lock();
             try{
@@ -410,10 +501,10 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
                 for(String match: hashMatches){
                     byte[] data = ZkUtils.safeGetData(zk,bucketNode+"/"+match,false,new Stat());
                     if(data.length>0){
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)){
                             //we can set the value
-                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<T,V>(key,newValue)),-1);
+                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<K,V>(key,newValue)),-1);
                             return newValue;
                         }
                     }
@@ -428,30 +519,31 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             }
         }
 
-        V put(T key, int hash, V value,boolean onlyIfAbsent){
+        V put(K key, int hash, V value,boolean onlyIfAbsent){
             Lock writeLock = safety.writeLock();
             writeLock.lock();
             try{
                 ZooKeeper zk = sessionManager.getZooKeeper();
                 List<String> hashMatches = ZkUtils.filterByPrefix(zk.getChildren(bucketNode, false), entryPrefix + "-" + hash);
                 for(String match: hashMatches){
+
                     byte[] data = ZkUtils.safeGetData(zk,bucketNode+"/"+match,false, new Stat());
                     if(data.length>0){
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)){
                             if(onlyIfAbsent){
                                 //it isn't absent, so we can't put it
                                 return deserializedEntry.getValue();
                             }
                             //we found our match, serialize and set the data
-                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<T,V>(key,value)),-1);
+                            zk.setData(bucketNode+"/"+match,serializer.serialize(new AbstractMap.SimpleEntry<K,V>(key,value)),-1);
                             return deserializedEntry.getValue();
                         }
                     }
                 }
 
                 //if we make it this far, we didn't find any matches, so just create another entry in this bucket
-                zk.create(bucketNode+"/"+ entryPrefix + entryDelimiter +hash+ entryDelimiter,serializer.serialize(new AbstractMap.SimpleEntry<T,V>(key,value)),nodePrivileges, CreateMode.PERSISTENT_SEQUENTIAL);
+                zk.create(bucketNode+"/"+ entryPrefix + entryDelimiter +hash+ entryDelimiter,serializer.serialize(new AbstractMap.SimpleEntry<K,V>(key,value)),nodePrivileges, CreateMode.PERSISTENT_SEQUENTIAL);
                 return value;
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
@@ -472,7 +564,7 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
                     Stat exists = zk.exists(bucketNode+"/"+match,false);
                     if(exists!=null){
                         byte[] data = zk.getData(bucketNode+"/"+match,false,exists);
-                        Map.Entry<T,V> deserializedEntry = serializer.deserialize(data);
+                        Map.Entry<K,V> deserializedEntry = serializer.deserialize(data);
                         if(deserializedEntry.getKey().equals(key)){
                             if(oldValue==null||deserializedEntry.getValue().equals(oldValue)){
                                 ZkUtils.safeDelete(zk,bucketNode+"/"+match,-1);
@@ -531,306 +623,112 @@ public class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
             safety.readLock().unlock();
         }
 
-        Set<T> keys() {
-            return new KeySet<T,V>(entries(),safety);
-        }
-
-        Collection<V> values(){
-            return new ValueCollection<T,V>(entries(),safety);
-        }
-
-        ZkSet<Entry<T,V>> entries(){
-            return new ZkListSet<Entry<T,V>>(bucketNode,sessionManager,nodePrivileges,serializer,safety){
-                @Override
-                protected String prefix() {
-                    return entryPrefix;
-                }
-
-                @Override
-                protected char delimiter() {
-                    return entryDelimiter;
-                }
-            };
-        }
-
-        @SuppressWarnings({"unchecked"})
-        public static <T,V> ZkSegment<T,V>[] newArray(int size) {
-            return new ZkSegment[size];
-        }
-
         private String getHashedPrefix(int hash) {
             return entryPrefix + entryDelimiter + hash;
         }
-    }
 
-    private static class KeySet<T,V> implements Set<T>{
-        private final Set<Entry<T,V>> delegate;
-        private final ReadWriteLock safety;
-
-        private KeySet(Set<Entry<T, V>> delegate, ReadWriteLock safety) {
-            this.delegate = delegate;
-            this.safety = safety;
+        public Iterator<Entry<K, V>> entryIterator() {
+            return new ZkReadWriteIterator<Entry<K,V>>(bucketNode,serializer,sessionManager,nodePrivileges,entryPrefix,entryDelimiter,safety);
         }
 
-        @Override
-        public int size() {
-            return delegate.size();
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return delegate.isEmpty();
-        }
-
-        @Override
-        public boolean contains(Object o) {
-            safety.readLock().lock();
-            try{
-                for(Entry<T,V> entry:delegate){
-                    if(entry.getKey().equals(o))return true;
-                }
-                return false;
-            }finally{
-                safety.readLock().unlock();
-            }
-        }
-
-        @Override
-        public Iterator<T> iterator() {
-            return new KeyIterator<T,V>(delegate.iterator());
-        }
-
-        @Override
-        public Object[] toArray() {
-            safety.readLock().lock();
-            try{
-                List<T> keys = new ArrayList<T>(delegate.size());
-                for(Entry<T,V> entry:delegate){
-                    keys.add(entry.getKey());
-                }
-                return keys.toArray();
-            }finally{
-                safety.readLock().unlock();
-            }
-        }
-
-        @Override
         @SuppressWarnings({"unchecked"})
-        public <T> T[] toArray(T[] a) {
-            Lock readLock = safety.readLock();
-            readLock.lock();
-            try{
-                List keys = new ArrayList(delegate.size());
-                for(Entry entry:delegate){
-                    keys.add(entry.getKey());
-                }
-                return (T[]) keys.toArray(a);
-            }finally{
-                readLock.unlock();
-            }
-        }
-
-        @Override
-        public boolean add(T t) {
-            throw new UnsupportedOperationException("Adding elements are not supported by this set");
-        }
-
-        @Override
-        public boolean remove(Object o) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
-
-        @Override
-        public boolean containsAll(Collection<?> c) {
-            for(Object o:c){
-                if(!contains(o))return false;
-            }
-            return true;
-        }
-
-        @Override
-        public boolean addAll(Collection<? extends T> c) {
-            throw new UnsupportedOperationException("Adding elements are not supported by this set");
-        }
-
-        @Override
-        public boolean retainAll(Collection<?> c) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
-
-        @Override
-        public boolean removeAll(Collection<?> c) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
-
-        @Override
-        public void clear() {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
+        private static <K,V> ZkSegment<K,V>[] newArray(int size) {
+            return new ZkSegment[size];
         }
     }
+    
 
+    /*Iterator support*/
 
-
-    private static class ValueCollection<T,V> implements Collection<V>{
-        private final Set<Entry<T,V>> delegate;
-        private final ReadWriteLock safety;
-
-        private ValueCollection(Set<Entry<T, V>> delegate, ReadWriteLock safety) {
-            this.delegate = delegate;
-            this.safety = safety;
+    private Iterator<Map.Entry<K,V>> entryIterator() {
+        List<Iterator<Entry<K,V>>> iterators = new ArrayList<Iterator<Entry<K,V>>>(segments.length);
+        for(ZkSegment<K,V> segment:segments){
+            iterators.add(segment.entryIterator());
         }
+        return new CompositeIterator<Entry<K,V>>(iterators);
+    }
 
+    private class EntrySet extends AbstractSet<Entry<K,V>>{
         @Override
-        public int size() {
-            return delegate.size();
-        }
+        public Iterator<Entry<K, V>> iterator() {return entryIterator();}
 
-        @Override
-        public boolean isEmpty() {
-            return delegate.isEmpty();
-        }
-
-        @Override
         public boolean contains(Object o) {
-            safety.readLock().lock();
-            try{
-                for(Entry<T,V> entry:delegate){
-                    if(entry.getKey().equals(o))return true;
-                }
+            if (!(o instanceof Map.Entry))
                 return false;
-            }finally{
-                safety.readLock().unlock();
-            }
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            V v = ZkHashMap.this.get(e.getKey());
+            return v != null && v.equals(e.getValue());
         }
 
-        @Override
-        public Iterator<V> iterator() {
-            return new ValueIterator<T,V>(delegate.iterator());
-        }
-
-        @Override
-        public Object[] toArray() {
-            safety.readLock().lock();
-            try{
-                List<T> keys = new ArrayList<T>(delegate.size());
-                for(Entry<T,V> entry:delegate){
-                    keys.add(entry.getKey());
-                }
-                return keys.toArray();
-            }finally{
-                safety.readLock().unlock();
-            }
-        }
-
-        @Override
-        @SuppressWarnings({"unchecked"})
-        public <V> V[] toArray(V[] a) {
-            Lock readLock = safety.readLock();
-            readLock.lock();
-            try{
-                List keys = new ArrayList(delegate.size());
-                for(Entry entry:delegate){
-                    keys.add(entry.getKey());
-                }
-                return (V[]) keys.toArray(a);
-            }finally{
-                readLock.unlock();
-            }
-        }
-
-        @Override
-        public boolean add(V v) {
-            throw new UnsupportedOperationException("Adding elements are not supported by this collection");
-        }
-
-        @Override
         public boolean remove(Object o) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            return ZkHashMap.this.remove(e.getKey(), e.getValue());
         }
 
-        @Override
-        public boolean containsAll(Collection<?> c) {
-            Lock lock = safety.readLock();
-            lock.lock();
-            try{
-                for(Object o:c){
-                    if(!contains(o))return false;
-                }
-                return true;
-            }finally{
-                lock.unlock();
-            }
-        }
-
-        @Override
-        public boolean addAll(Collection<? extends V> c) {
-            throw new UnsupportedOperationException("Adding elements are not supported by this collection");
-        }
-
-        @Override
-        public boolean retainAll(Collection<?> c) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
-
-        @Override
-        public boolean removeAll(Collection<?> c) {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
-
-        @Override
-        public void clear() {
-            throw new UnsupportedOperationException("Removing elements are not supported by this set");
-        }
+        public int size() {return ZkHashMap.this.size();}
+        public void clear() {ZkHashMap.this.clear();}
     }
 
-    private static class KeyIterator<T,V> implements Iterator<T>{
-        private final Iterator<Entry<T,V>> entryIterator;
-
-        private KeyIterator(Iterator<Entry<T, V>> entryIterator) {
-            this.entryIterator = entryIterator;
-        }
+    private class KeySet extends AbstractSet<K>{
 
         @Override
-        public boolean hasNext() {
-            return entryIterator.hasNext();
-        }
+        public Iterator<K> iterator() {return new KeyIterator();}
 
         @Override
-        public T next() {
-            return entryIterator.next().getKey();
-        }
+        public int size() {return ZkHashMap.this.size();}
 
         @Override
-        public void remove() {
-            throw new UnsupportedOperationException("remove is not supported");
-        }
+        public boolean contains(Object o) {return ZkHashMap.this.containsKey(o);}
+
+        @Override
+        public boolean remove(Object o) {return ZkHashMap.this.remove(o)!=null;}
     }
 
-    private static class ValueIterator<T,V> implements Iterator<V>{
-        private final Iterator<Entry<T,V>> entryIterator;
-
-        private ValueIterator(Iterator<Entry<T, V>> entryIterator) {
-            this.entryIterator = entryIterator;
-        }
+    private class ValuesCollection extends AbstractCollection<V>{
 
         @Override
-        public boolean hasNext() {
-            return entryIterator.hasNext();
-        }
+        public Iterator<V> iterator() {return new ValueIterator();}
 
         @Override
-        public V next() {
-            return entryIterator.next().getValue();
-        }
+        public int size() {return ZkHashMap.this.size();}
+
+        public boolean contains(Object o) {return ZkHashMap.this.containsValue(o);}
+        public void clear() {ZkHashMap.this.clear();}
+    }
+
+    private abstract class BaseIterator{
+        private final Iterator<Map.Entry<K,V>> delegate;
+
+        public BaseIterator() {this.delegate = entryIterator();}
+
+        public boolean hasMoreElements() {return hasNext();}
+
+        public Map.Entry<K,V> nextEntry() {return delegate.next();}
+
+        public boolean hasNext() {return delegate.hasNext();}
+
+        public void remove() {delegate.remove();}
+    }
+
+    private class KeyIterator extends BaseIterator implements Iterator<K>, Enumeration<K>{
 
         @Override
-        public void remove() {
-            throw new UnsupportedOperationException("remove is not supported");
-        }
+        public K nextElement() {return next();}
+
+        @Override
+        public K next() {return super.nextEntry().getKey();}
+    }
+
+    private class ValueIterator extends BaseIterator implements Iterator<V>, Enumeration<V>{
+
+        @Override
+        public V nextElement() {return next();}
+
+        @Override
+        public V next() {return super.nextEntry().getValue();}
     }
 
 
-    private ZkSegment<K, V> bucketFor(int hash) {
-        return segments[(hash >>> segmentShift) & segmentMask];
-    }
 }

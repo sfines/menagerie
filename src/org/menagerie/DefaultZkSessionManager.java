@@ -15,6 +15,7 @@
  */
 package org.menagerie;
 
+import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
@@ -23,6 +24,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -82,6 +84,21 @@ public class DefaultZkSessionManager implements ZkSessionManager{
                 zk = new ZooKeeper(connectionString,timeout,new SessionWatcher(this));
             } catch (IOException e) {
                 throw new RuntimeException(e);
+            }
+        }else{
+            //make sure that your zookeeper instance is synced
+            final CountDownLatch latch = new CountDownLatch(1);
+            zk.sync("/",new AsyncCallback.VoidCallback() {
+                @Override
+                public void processResult(int rc, String path, Object ctx) {
+                    latch.countDown();
+                }
+            }, this);
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                //shouldn't be interruptible, so just continue on, resetting the interrupt status
+                Thread.currentThread().interrupt();
             }
         }
         return zk;

@@ -125,14 +125,14 @@ public final class ReentrantZkReadWriteLock implements ReadWriteLock {
             List<String> writeLocks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),writeLockPrefix);
             ZkUtils.sortBySequence(writeLocks,lockDelimiter); 
 
-
             //if the writeLock is the one in the lead, then add the ReadLock to the same order and return true
-            if(writeLocks.size()>0&&(baseNode+"/"+writeLocks.get(0)).equals(ReentrantZkReadWriteLock.this.writeLock.getLockName())){
-                //create a readLock node with the same number as the write lock's, and delete the lockNode, since
-                //we've automatically been upgraded to possession of the lock
-                zk.create(getBaseLockPath()+ZkUtils.parseSequenceNumber(writeLocks.get(0),lockDelimiter),emptyNode,privileges, CreateMode.EPHEMERAL);
-                zk.delete(lockNode,-1);
-                return true;
+            if(writeLocks.size()>0){
+                String leadWriteLock = writeLocks.get(0);
+                if((baseNode+"/"+leadWriteLock).equals(ReentrantZkReadWriteLock.this.writeLock.getLockName())){
+                    zk.create(getBaseLockPath()+lockDelimiter+ZkUtils.parseSequenceString(writeLocks.get(0),lockDelimiter),emptyNode,privileges, CreateMode.EPHEMERAL);
+                    zk.delete(lockNode,-1);
+                    return true;
+                }
             }
 
             long mySequenceNumber = ZkUtils.parseSequenceNumber(lockNode,lockDelimiter);
@@ -152,9 +152,9 @@ public final class ReentrantZkReadWriteLock implements ReadWriteLock {
             while(aheadWriteLocks.size()>0){
                 String lastWriteLock = aheadWriteLocks.remove(aheadWriteLocks.size() - 1);
                 Stat stat;
-                if(watch)
+                if(watch){
                     stat = zk.exists(baseNode+"/"+ lastWriteLock,signalWatcher);
-                else
+                }else
                     stat = zk.exists(baseNode+"/"+ lastWriteLock,false);
                 if(stat!=null){
                     //this node still exists, so wait in line behind it

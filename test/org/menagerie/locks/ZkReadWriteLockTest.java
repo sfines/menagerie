@@ -15,19 +15,11 @@
  */
 package org.menagerie.locks;
 
-import org.apache.zookeeper.*;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.apache.zookeeper.ZooDefs;
 import org.junit.Test;
-import org.menagerie.BaseZkSessionManager;
-import org.menagerie.ZkSessionManager;
-import org.menagerie.ZkUtils;
+import org.menagerie.MenagerieTest;
 
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 
@@ -38,51 +30,24 @@ import static org.junit.Assert.assertTrue;
  * @author Scott Fines
  * @version 1.0
  */
-public class ZkReadWriteLockTest {
+public class ZkReadWriteLockTest extends MenagerieTest {
 
-    private static ZooKeeper zk;
-    private static final String baseLockPath = "/test-locks";
-    private static final int timeout = 20000000;
     private static final ExecutorService testService = Executors.newFixedThreadPool(2);
 
-    private static ZkSessionManager zkSessionManager;
 
-    @BeforeClass
-    public static void setupBeforeClass() throws Exception {
-
-        zk = new ZooKeeper("localhost:2181", timeout,new Watcher() {
-            @Override
-            public void process(WatchedEvent event) {
-                System.out.println(event);
-            }
-        });
-
-        //be sure that the lock-place is created
-
-        zk.create(baseLockPath,new byte[]{}, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-
-        zkSessionManager = new BaseZkSessionManager(zk);
+     @Override
+    protected void prepare() {
+        //To change body of implemented methods use File | Settings | File Templates.
     }
 
-    @AfterClass
-    public static void tearDownAfterClass() throws Exception{
-        try{
-            List<String> children = zk.getChildren(baseLockPath,false);
-            for(String child:children){
-                ZkUtils.safeDelete(zk,baseLockPath+"/"+child,-1);
-            }
-            ZkUtils.safeDelete(zk,baseLockPath,-1);
-
-        }catch(KeeperException ke){
-            //suppress because who cares what went wrong after our tests did their thing?
-        }finally{
-            zk.close();
-        }
+    @Override
+    protected void close() {
+        //To change body of implemented methods use File | Settings | File Templates.
     }
 
     @Test(timeout = 1000l)
     public void testNoWritesWithASingleRead() throws Exception{
-        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
 
         Lock readLock = lock.readLock();
         final Lock writeLock = lock.writeLock();
@@ -112,20 +77,30 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testNoReadsWithSingleWrite() throws Exception{
-        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
+        final CyclicBarrier waitBarrier = new CyclicBarrier(2);
 
         final Lock readLock = lock.readLock();
         final Lock writeLock = lock.writeLock();
-        writeLock.lock();
+
         final CountDownLatch latch = new CountDownLatch(1);
-        testService.submit(new Runnable() {
+        Future<Void> future = testService.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
+                waitBarrier.await();
+
                 readLock.lock();
-                latch.countDown();
-                readLock.unlock();
+                try{
+                    latch.countDown();
+                }finally{
+                    readLock.unlock();
+                }
+                return null;  //To change body of implemented methods use File | Settings | File Templates.
             }
         });
+
+        writeLock.lock();
+        waitBarrier.await();
 
         boolean acquired = latch.await(250, TimeUnit.MILLISECONDS);
         assertTrue("The Read lock was improperly acquired!",!acquired);
@@ -133,16 +108,17 @@ public class ZkReadWriteLockTest {
         //unlock the read lock, and make sure that the write lock is acquired
 
         writeLock.unlock();
-        acquired = latch.await(250, TimeUnit.MILLISECONDS);
+        acquired = latch.await(300, TimeUnit.MILLISECONDS);
         assertTrue("The Read lock was never acquired!",acquired);
 
-
+        //make sure no exceptions were thrown
+        future.get();
     }
 
     @Test(timeout = 1000l)
     public void testMultipleReadsAllowed() throws Exception{
-        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
-        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
+        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
 
         final Lock firstReadLock = firstLock.readLock();
         final Lock secondReadLock = secondLock.readLock();
@@ -177,8 +153,8 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 1000l)
     public void testOneWriteAllowed() throws Exception{
-        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
-        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(baseLockPath, zkSessionManager);
+        ReadWriteLock firstLock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
+        ReadWriteLock secondLock = new ReentrantZkReadWriteLock(testPath, zkSessionManager);
 
         final Lock firstWriteLock = firstLock.writeLock();
         final Lock secondWriteLock = secondLock.writeLock();
@@ -209,7 +185,7 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout=1000l)
     public void testUpgradingReadToWriteNotPossibleSingleThread() throws Exception{
-        ReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        ReadWriteLock lock = new ReentrantZkReadWriteLock(testPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
         Lock readLock = lock.readLock();
         readLock.lock();
 
@@ -219,7 +195,7 @@ public class ZkReadWriteLockTest {
 
     @Test(timeout = 100000l)
     public void testDowngradingWriteLockToReadPossible() throws Exception{
-        ReentrantZkReadWriteLock lock = new ReentrantZkReadWriteLock(baseLockPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
+        ReentrantZkReadWriteLock lock = new ReentrantZkReadWriteLock(testPath,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE);
         Lock writeLock = lock.writeLock();
         writeLock.lock();
 
@@ -231,6 +207,7 @@ public class ZkReadWriteLockTest {
         boolean hasRead = lock.readLock().hasLock();
         assertTrue("The Read lock does not have the lock anymore!",hasRead);
     }
+
 
 
 }

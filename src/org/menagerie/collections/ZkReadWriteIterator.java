@@ -25,7 +25,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 
 /**
- * TODO -sf- document!
+ * ZooKeeper iterator which uses a Read-Write lock to enforce ZooKeeper-based synchronization.
  *
  * @author Scott Fines
  * @version 1.0

@@ -22,7 +22,7 @@ import org.junit.Before;
 import java.io.IOException;
 
 /**
- * TODO -sf- document!
+ * Base class for Menagerie tests, to provide convenience setup and tearDown methods.
  *
  * @author Scott Fines
  * @version 1.0
@@ -49,6 +49,9 @@ public abstract class MenagerieTest {
         prepare();
     }
 
+    /**
+     * Prepare for the next test by constructing new objects, etc, as necessary
+     */
     protected abstract void prepare();
 
     @After
@@ -64,10 +67,19 @@ public abstract class MenagerieTest {
         }
     }
 
+    /**
+     * Cleanup the subclass after a test has ran
+     */
     protected abstract void close();
 
 
-    private static ZooKeeper newZooKeeper() throws IOException {
+    /**
+     * Creates a new test ZooKeeper instance
+     *
+     * @return a new ZooKeeper instance
+     * @throws IOException if there is trouble connecting to ZooKeeper
+     */
+    protected static ZooKeeper newZooKeeper() throws IOException {
         return new ZooKeeper(hostString, timeout,new Watcher() {
             @Override
             public void process(WatchedEvent event) {

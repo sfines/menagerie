@@ -15,6 +15,8 @@
  */
 package org.menagerie;
 
+import java.lang.annotation.*;
+
 /**
  * Used to indicate that a particular feature is still under heavy development and should
  * <i>not</i> be used in production.
@@ -27,5 +29,8 @@ package org.menagerie;
  *          Date: 11-Jan-2011
  *          Time: 21:02:12
  */
+@Documented
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.SOURCE)
 public @interface Beta {
 }

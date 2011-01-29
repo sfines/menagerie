@@ -20,16 +20,10 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
-import org.menagerie.Beta;
-import org.menagerie.Serializer;
-import org.menagerie.ZkSessionManager;
-import org.menagerie.ZkUtils;
+import org.menagerie.*;
 import org.menagerie.locks.ReentrantZkReadWriteLock;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.locks.ReadWriteLock;
 
 /**
@@ -42,17 +36,18 @@ import java.util.concurrent.locks.ReadWriteLock;
  * Note: This implementation relies upon global, synchronous locking on the baseNode. Therefore, this implementation
  * is the distributed equivalent of {@code java.util.Collections.synchronizedSet(java.util.Set)};
  * <p>
- * WARNING: This is <i>not</i> the most efficient implementation of a ZooKeeper Set. In the worst case, a traversal
- * of <i>all</i> the elements in this set must occur for a put, get, or remove operation to occur. A more efficient
- * implementation can be found in {@link ZkHashSet<T>}
+ * WARNING: This is <i>not</i> the most efficient implementation possible of a ZooKeeper Set. In the worst case, a traversal
+ * of <i>all</i> the elements in this set must occur for a put, get, or remove operation to occur.
  *
  * @author Scott Fines
  * @version 1.0
+ * @param <T> the type of entities to be stored in the set
  *          Date: 09-Jan-2011
  *          Time: 20:01:49
  */
 @Beta
-public class ZkListSet<T> implements ZkSet<T> {
+@ClusterSafe
+public class ZkListSet<T> implements Set<T> {
     private final String baseNode;
     private final ZkSessionManager sessionManager;
     private final List<ACL> privileges;
@@ -119,14 +114,7 @@ public class ZkListSet<T> implements ZkSet<T> {
 
     @Override
     public Iterator<T> iterator() {
-        return zkIterator();
-    }
-
-    @Override
-    public ZkIterator<T> zkIterator() {
-        ZkIterator<T> iterator = new ZkIterator<T>(baseNode, serializer, sessionManager, privileges, prefix(), delimiter());
-        iterator.initIterator();
-        return iterator;
+        return new ZkReadWriteIterator<T>(baseNode, serializer, sessionManager, privileges, prefix(), delimiter(),safety);
     }
 
     @Override

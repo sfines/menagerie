@@ -4,13 +4,13 @@ import org.apache.zookeeper.*;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.menagerie.BaseZkSessionManager;
-import org.menagerie.JavaSerializer;
-import org.menagerie.ZkSessionManager;
-import org.menagerie.ZkUtils;
-import org.menagerie.collections.ZkHashMap;
+import org.menagerie.*;
 
 import java.io.IOException;
+import java.util.AbstractMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.Assert.*;
 
@@ -45,7 +45,9 @@ public class ZkHashMapTestSingleThreaded {
 
         zkSessionManager = new BaseZkSessionManager(zk);
 
-        testMap = new ZkHashMap<String, String>(baseLockPath,zkSessionManager,new JavaSerializer<String, String>());
+        testMap = new ZkHashMap<String, String>(baseLockPath,zkSessionManager,new JavaEntrySerializer<String, String>());
+
+        
     }
 
     @After
@@ -65,7 +67,7 @@ public class ZkHashMapTestSingleThreaded {
         int numBucketsNow = ZkUtils.filterByPrefix(zk.getChildren(baseLockPath,false),"bucket").size();
 
         @SuppressWarnings({"UnusedDeclaration"})
-        ZkHashMap<String,String> type = new ZkHashMap<String, String>(baseLockPath,zkSessionManager,new JavaSerializer<String, String>());
+        ZkHashMap<String,String> type = new ZkHashMap<String, String>(baseLockPath,zkSessionManager,new JavaEntrySerializer<String, String>());
 
         int newNumBuckets = ZkUtils.filterByPrefix(zk.getChildren(baseLockPath,false),"bucket").size();
         assertEquals("Buckets were added or removed incorrectly!",numBucketsNow,newNumBuckets);
@@ -261,6 +263,73 @@ public class ZkHashMapTestSingleThreaded {
         assertNull("map still contains entry",shouldBeNull);
     }
 
+    @Test(timeout = 1000l)
+    public void testRemoveEntryFromEntrySet() throws Exception{
+        //put some entries into the map
+        for(int i=0;i<5;i++){
+            testMap.put(Integer.toString(i),"Test Value "+ i);
+        }
+        assertEquals("Test map incorrectly reports size!",5,testMap.size());
+
+        Set<Map.Entry<String,String>> entries = testMap.entrySet();
+        Iterator<Map.Entry<String,String>> entryIterator = entries.iterator();
+
+        int size = 5;
+        while(entryIterator.hasNext()){
+            Map.Entry<String,String> entry = entryIterator.next();
+            System.out.println(Thread.currentThread().getName()+": reading entry "+ entry);
+            if(Integer.parseInt(entry.getKey())%2==0){
+                System.out.println(Thread.currentThread().getName()+ ": Removing entry "+ entry);
+                //call remove, reassert size, and check that that entry is no longer in the entries set, or in the map
+                entryIterator.remove();
+                size--;
+                assertEquals("Deletion not recorded!",size, testMap.size());
+                
+                //now check contains
+                boolean shouldNotContainKey = !testMap.containsKey(entry.getKey());
+                assertTrue("Key " + entry.getKey()+" is still in the map!", shouldNotContainKey);
+                
+                boolean shouldNotContainEntry = !entries.contains(entry);
+                assertTrue("Entry " + entry+" is still contained!",shouldNotContainEntry);
+            }
+        }
+        //make sure that the size is half of what you started with
+        assertEquals("Reported size does not match after removal!",5/2,testMap.size());
+    }
+
+    @Test(timeout = 1000l)
+    public void testRemoveKeyFromKeySet() throws Exception{
+        //put some entries into the map
+        for(int i=0;i<5;i++){
+            testMap.put(Integer.toString(i),"Test Value "+ i);
+        }
+        assertEquals("Test map incorrectly reports size!",5,testMap.size());
+
+        Set<String> keys = testMap.keySet();
+        Iterator<String> keyIterator = keys.iterator();
+
+        int size = 5;
+        while(keyIterator.hasNext()){
+            String key = keyIterator.next();
+            System.out.println(Thread.currentThread().getName()+": reading key "+ key);
+            if(Integer.parseInt(key)%2==0){
+                System.out.println(Thread.currentThread().getName()+ ": Removing key "+ key);
+                //call remove, reassert size, and check that that entry is no longer in the entries set, or in the map
+                keyIterator.remove();
+                size--;
+                assertEquals("Deletion not recorded!",size, testMap.size());
+
+                //now check contains
+                boolean shouldNotContainKey = !testMap.containsKey(key);
+                assertTrue("Key " + key+" is still in the map!", shouldNotContainKey);
+
+                boolean shouldNotContainEntry = !keys.contains(key);
+                assertTrue("Key " + key+" is still contained in the key set!",shouldNotContainEntry);
+            }
+        }
+        //make sure that the size is half of what you started with
+        assertEquals("Reported size does not match after removal!",5/2,testMap.size());
+    }
 
     private void insertAndAssert(String key, String value){
         String val = testMap.put(key, value);

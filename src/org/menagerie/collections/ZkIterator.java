@@ -24,93 +24,95 @@ import org.menagerie.*;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 /**
- * TODO -sf- document!
+ * A ZooKeeper-based general-purpose iterator.
+ * <p>
+ * This class provides the mechanisms needed to iterate over all the children of a specified znode which matches
+ * a pre-determined predicate.
  *
+ * <p>Like many direct iterator implementations, this is <em>not</em> thread-safe, and is intended to be used
+ * by only one thread. This implementation also does not provide any ZooKeeper-based synchronization protocols. Classes
+ * which need to provide any ZooKeeper synchronization should extend this class to provide the necessary synchronization.
+ *
+ * <p>This iterator is <i>weakly-consistent</i>, and will never
+ * through a {@link java.util.ConcurrentModificationException}.
+ *  
  * @author Scott Fines
  * @version 1.0
+ * @param <T> the type of elements to be retrieved from the iterator
  *          Date: 08-Jan-2011
  *          Time: 12:42:37
  */
 @Beta
-public class ZkIterator<T> extends ZkPrimitive implements Iterator<T> {
-    private volatile List<String> currentList;
-    private volatile int cursor = 0;
-    private volatile String currentNode;
-    private volatile byte[] currentData;
-    private volatile boolean removeCalled = false;
+class ZkIterator<T> extends ZkPrimitive implements Iterator<T> {
+    private int cursor = 0;
+    private String currentNode;
+    private byte[] currentData;
+    private boolean removeCalled = false;
 
     private final Serializer<T> serializer;
-    private final IteratorWatcher updater;
-    private volatile boolean initialized = false;
-    private final Executor executor = Executors.newSingleThreadExecutor();
     private final char iteratorDelimiter;
+    private final String prefix;
 
-
-    public ZkIterator(String baseNode, Serializer<T> serializer, ZkSessionManager zkSessionManager, List<ACL> privileges,String iteratorPrefix,char iteratorDelimiter) {
+    /**
+     * Constructs a new iterator.
+     *
+     * @param baseNode the znode to iterate over
+     * @param serializer the serializer to use to deserialize the entries
+     * @param zkSessionManager the ZooKeeper Session Manager to use
+     * @param privileges the privileges that this znode requires
+     * @param iteratorPrefix the prefix of interest
+     * @param iteratorDelimiter the delimiter separating the prefix from sequence numbers.
+     */
+    public ZkIterator(String baseNode, Serializer<T> serializer, ZkSessionManager zkSessionManager,
+                      List<ACL> privileges,String iteratorPrefix,char iteratorDelimiter) {
         super(baseNode,zkSessionManager,privileges);
         this.serializer = serializer;
         this.iteratorDelimiter = iteratorDelimiter;
+        this.prefix = iteratorPrefix;
 
-        updater = new IteratorWatcher(baseNode,zkSessionManager,privileges,iteratorPrefix,iteratorDelimiter);
-    }
-
-    public synchronized void initIterator(){
-        if(initialized)
-            throw new IllegalMonitorStateException("Cannot initialize the same iterator twice!");
-        executor.execute(new Runnable() {
-            @Override
-            public void run() {
-                updater.updateIterator();
-            }
-        });
-        initialized = true;
-    }
-
-    public synchronized void closeIterator(){
-        updater.stop();
     }
 
     @Override
     public boolean hasNext() {
         ZooKeeper zk = zkSessionManager.getZooKeeper();
-        for(String child:currentList){
-            int pos = ZkUtils.parseSequenceNumber(child,iteratorDelimiter);
-            if(pos>cursor){
-                try {
+        try {
+            //get the most up-to-date-list
+            List<String> children = ZkUtils.filterByPrefix(zk.getChildren(baseNode, false),prefix);
+            //now go through it until you find a position higher than your current cursor
+            ZkUtils.sortBySequence(children,iteratorDelimiter);
+            for(String child:children){
+                int pos = ZkUtils.parseSequenceNumber(child,iteratorDelimiter);
+
+                if(pos>=cursor){
                     currentData = ZkUtils.safeGetData(zk,baseNode+"/"+child,false, new Stat());
                     if(currentData.length>0){
                         currentNode = child;
                         return true;
                     }
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                } catch (KeeperException e) {
-                    throw new RuntimeException(e);
                 }
             }
+            currentData=null;
+            return false;
+        } catch (KeeperException e) {
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
-
-        //stop trying to update this iterator, it's been used up
-        closeIterator();
-        currentData = null;
-        return false;
     }
 
     @Override
     public T next() {
         if(currentData==null) throw new NoSuchElementException();
-        cursor = ZkUtils.parseSequenceNumber(currentNode,iteratorDelimiter);
+        cursor = ZkUtils.parseSequenceNumber(currentNode,iteratorDelimiter)+1;
         removeCalled = false;
         return serializer.deserialize(currentData);
     }
 
     @Override
     public void remove() {
-        if(removeCalled)
+        if(removeCalled||currentNode==null)
             throw new IllegalStateException("Remove called without first calling next!");
         try {
             ZkUtils.safeDelete(zkSessionManager.getZooKeeper(),baseNode+"/"+currentNode,-1);
@@ -123,51 +125,8 @@ public class ZkIterator<T> extends ZkPrimitive implements Iterator<T> {
         removeCalled = true;
     }
 
-    private class IteratorWatcher extends ZkPrimitive{
-        private volatile boolean running;
-        private final String prefix;
-        private final char prefixDelimiter;
-
-        /**
-         * Creates a new ZkPrimitive with the correct node information.
-         *
-         * @param baseNode         the base node to use
-         * @param zkSessionManager the session manager to use
-         * @param privileges       the privileges for this node.
-         */
-        protected IteratorWatcher(String baseNode, ZkSessionManager zkSessionManager, List<ACL> privileges,String iteratorPrefix, char prefixDelimiter) {
-            super(baseNode, zkSessionManager, privileges);
-            this.prefix = iteratorPrefix;
-            this.prefixDelimiter = prefixDelimiter;
-        }
-
-        public void updateIterator(){
-            while(running){
-                localLock.lock();
-                try{
-                    List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode, signalWatcher), prefix);
-                    ZkUtils.sortBySequence(children,prefixDelimiter);
-
-                    currentList = children;
-
-                    condition.await();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                } catch (KeeperException e) {
-                    throw new RuntimeException(e);
-                } finally{
-                    localLock.unlock();
-                }
-            }
-        }
-
-        public synchronized void stop(){
-            running=false;
-            this.notifyParties();
-        }
-
-        public boolean isRunning(){
-            return running;
-        }
+    @Override
+    public String toString() {
+        return "ZkIterator{ baseNode = " + baseNode+"}" ;
     }
 }

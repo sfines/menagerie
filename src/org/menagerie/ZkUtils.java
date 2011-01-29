@@ -75,6 +75,18 @@ public class ZkUtils {
      * @return the sequence number of the given node
      */
     public static int  parseSequenceNumber(String node,char sequenceStartDelimiter){
+        String sequenceStr = parseSequenceString(node,sequenceStartDelimiter);
+        return Integer.parseInt(sequenceStr);
+    }
+
+    /**
+     * Parses a sequence number as a String from a ZooKeeper sequential node-name.
+     *
+     * @param node the node to parse
+     * @param sequenceStartDelimiter the delimiter separating a node prefix from its sequence number
+     * @return the sequence number of the given node
+     */
+    public static String parseSequenceString(String node, char sequenceStartDelimiter){
         if(node==null)throw new NullPointerException("No node specified!");
 
         int seqStartIndex = node.lastIndexOf(sequenceStartDelimiter);
@@ -82,8 +94,7 @@ public class ZkUtils {
             throw new IllegalArgumentException("No sequence is parseable from the specified node: " +
                                                 "Node= <"+node+">, sequence delimiter=<"+sequenceStartDelimiter+">");
 
-        String sequenceStr = node.substring(seqStartIndex+1);
-        return Integer.parseInt(sequenceStr);
+        return node.substring(seqStartIndex+1);
     }
 
     /**

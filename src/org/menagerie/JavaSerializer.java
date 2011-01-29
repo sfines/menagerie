@@ -16,26 +16,23 @@
 package org.menagerie;
 
 import java.io.*;
-import java.util.AbstractMap;
-import java.util.Map;
 
 /**
- * TODO -sf- document!
+ * Serializer based on Java Serialization.
  *
  * @author Scott Fines
  * @version 1.0
- *          Date: 08-Jan-2011
- *          Time: 10:58:20
+ *          Date: 20-Jan-2011
+ *          Time: 08:45:40
  */
-@Beta
-public class JavaSerializer<K extends Serializable, V extends Serializable> implements Serializer<Map.Entry<K,V>> {
+public class JavaSerializer<T extends Serializable> implements Serializer<T> {
 
     @Override
     @SuppressWarnings({"unchecked"})
-    public Map.Entry<K, V> deserialize(byte[] data) {
+    public T deserialize(byte[] data) {
         try {
             ObjectInputStream inputStream  = new ObjectInputStream(new ByteArrayInputStream(data));
-            return (AbstractMap.SimpleEntry<K,V>)inputStream.readObject();
+            return (T)inputStream.readObject();
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (ClassNotFoundException e) {
@@ -44,9 +41,8 @@ public class JavaSerializer<K extends Serializable, V extends Serializable> impl
         }
     }
 
-
     @Override
-    public byte[] serialize(Map.Entry<K, V> instance) {
+    public byte[] serialize(T instance) {
          try {
             ByteArrayOutputStream byteArrayStream = new ByteArrayOutputStream();
             ObjectOutputStream arrayOutput = new ObjectOutputStream(byteArrayStream);

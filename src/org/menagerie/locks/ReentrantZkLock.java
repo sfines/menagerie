@@ -300,7 +300,9 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
      * @return the name of the lock which this thread owns, or null.
      */
     protected final String getLockName(){
-        return locks.get().lockNode();
+        LockHolder lockHolder = locks.get();
+        if(lockHolder==null) return null;
+        return lockHolder.lockNode();
     }
 
     /**
@@ -323,7 +325,7 @@ public class ReentrantZkLock extends ZkPrimitive implements Lock {
         if(numLocks==0){
             locks.remove();
             try {
-                zkSessionManager.getZooKeeper().delete(nodeToRemove.lockNode(),-1);
+                ZkUtils.safeDelete(zkSessionManager.getZooKeeper(),nodeToRemove.lockNode(),-1);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             } catch (KeeperException e) {
