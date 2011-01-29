@@ -207,6 +207,7 @@ public class ZkPrimitive {
 
         @Override
         public void process(WatchedEvent event) {
+
             primitive.notifyParties();
         }
     }

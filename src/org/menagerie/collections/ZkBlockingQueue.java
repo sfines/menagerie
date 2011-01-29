@@ -169,12 +169,32 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
 
     @Override
     public int drainTo(Collection<? super E> c) {
+        if(this.equals(c))
+            throw new IllegalArgumentException("Cannot drain queue to itself");
         return sync.drainTo(c);
     }
 
     @Override
     public int drainTo(Collection<? super E> c, int maxElements) {
+        if(this.equals(c))
+            throw new IllegalArgumentException("Cannot drain queue to itself");
         return sync.drainTo(c, maxElements);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ZkBlockingQueue)) return false;
+
+        ZkBlockingQueue that = (ZkBlockingQueue) o;
+        if (sync != null ? !sync.equals(that.sync) : that.sync != null) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        return sync != null ? sync.hashCode() : 0;
     }
 
     private static abstract class QueueSync<E> extends ZkPrimitive{
@@ -233,9 +253,14 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
         abstract boolean offer(E e, long timeout, TimeUnit unit) throws InterruptedException;
 
         E poll(long timeout, TimeUnit unit) throws InterruptedException {
+            if(Thread.interrupted()){
+                throw new InterruptedException();
+            }
             long timeoutNanos = unit.toNanos(timeout);
             while(true){
-                if(timeoutNanos<=0) //we timed out
+                if(Thread.interrupted())
+                    throw new InterruptedException();
+                else if(timeoutNanos<=0) //we timed out
                     return null;
 
                 //acquire a local lock to allow us to wait if necessary
@@ -256,7 +281,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
                         return null;
                     timeLeft = timeLeft - distElapsed;
                     try{
-                        E element = getAndDelete(zooKeeper);
+                        E element = getAndDelete(zooKeeper,true);
                         if(element!=null)
                             return element; //we found it!
                     }finally{
@@ -277,33 +302,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
         abstract int remainingCapacity();
 
         E take() throws InterruptedException{
-            if(Thread.interrupted()){
-                throw new InterruptedException();
-            }
-            while(true){
-                if(Thread.interrupted())
-                    throw new InterruptedException();
-                localLock.lock();
-                try{
-                    ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
-                    //acquire a distributed write-lock to protect us
-                    Lock writeLock = headLock.writeLock();
-                    writeLock.lock();
-                    try{
-                        E element = getAndDelete(zooKeeper);
-                        if(element!=null)
-                            return element;
-                    }finally{
-                        writeLock.unlock();
-                    }
-                    //There are no elements on the queue--wait until one becomes available
-                    condition.await();
-                } catch (KeeperException e) {
-                    throw new RuntimeException(e);
-                } finally{
-                    localLock.unlock();
-                }
-            }
+            return poll(Long.MAX_VALUE,TimeUnit.DAYS);
         }
 
         E element(){
@@ -342,7 +341,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
             Lock lock = headLock.writeLock();
             lock.lock();
             try{
-                return getAndDelete(zkSessionManager.getZooKeeper());
+                return getAndDelete(zkSessionManager.getZooKeeper(),false);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             } catch (KeeperException e) {
@@ -366,8 +365,13 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
             }
         }
 
-        protected E getAndDelete(ZooKeeper zooKeeper) throws KeeperException, InterruptedException {
-            List<String> queueEntries = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), queuePrefix);
+        protected E getAndDelete(ZooKeeper zooKeeper, boolean watch) throws KeeperException, InterruptedException {
+            List<String> queueEntries;
+            if(watch)
+                queueEntries = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, signalWatcher), queuePrefix);
+            else
+                queueEntries = ZkUtils.filterByPrefix(zooKeeper.getChildren(baseNode, false), queuePrefix);
+
             ZkUtils.sortBySequence(queueEntries,queueDelimiter);
             //get the first entry's data
             for(String queueEntry:queueEntries){
@@ -388,6 +392,24 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
             long end = System.nanoTime();
             if(!acquired)return -1l;
             else return (end-start);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof QueueSync)) return false;
+            if (!super.equals(o)) return false;
+
+            QueueSync queueSync = (QueueSync) o;
+
+            return queueSync.baseNode.equals(baseNode);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = super.hashCode();
+            result = 31 * result + (baseNode != null ? baseNode.hashCode() : 0);
+            return result;
         }
     }
 
