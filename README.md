@@ -59,17 +59,16 @@ Obviously, Menagerie doesn't have every concurrency tool ever written, though we
 * Count Down Latches
 * Cyclic Barriers
 * Synchronous Leader Election
+* A Distributed Map implementation
+* A Distributed Blocking Queue
 
 ZooKeeper is capable of much more, and we plan to do the following in the next few releases:
 
 * Asynchronous Leader Election
-* Semaphores
 * AbstractZkQueuedSynchronizer
 * Distributed Event framework
 * Distributed Executor framework
 * Persistent Messaging Queues
-* Blocking Queues
-* Concurrent Maps
 
 If you think of something that you would like to see, please drop us a line so we can add it to the road map!
 
