@@ -44,7 +44,6 @@ import java.util.NoSuchElementException;
  *          Date: 08-Jan-2011
  *          Time: 12:42:37
  */
-@Beta
 class ZkIterator<T> extends ZkPrimitive implements Iterator<T> {
     private int cursor = 0;
     private String currentNode;

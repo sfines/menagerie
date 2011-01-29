@@ -32,7 +32,6 @@ import java.util.concurrent.locks.ReadWriteLock;
  *          Date: 20-Jan-2011
  *          Time: 08:31:16
  */
-@Beta
 final class ZkReadWriteIterator<E> extends ZkIterator<E>{
     private final ReadWriteLock safety;
 

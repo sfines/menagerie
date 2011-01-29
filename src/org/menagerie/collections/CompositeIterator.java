@@ -35,7 +35,6 @@ import java.util.*;
  * @author Scott Fines
  * @version 1.0
  */
-@Beta
 final class CompositeIterator<T> implements Iterator<T> {
     private final Queue<Iterator<T>> iterators;
 

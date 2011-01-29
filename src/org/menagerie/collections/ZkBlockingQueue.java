@@ -55,7 +55,6 @@ import java.util.concurrent.locks.ReadWriteLock;
  *          Date: 15-Jan-2011
  *          Time: 10:51:46
  */
-@Beta
 @ClusterSafe
 public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements BlockingQueue<E> {
     private final QueueSync<E> sync;

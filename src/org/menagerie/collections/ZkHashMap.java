@@ -65,7 +65,6 @@ import java.util.concurrent.locks.ReadWriteLock;
  *          Date: 07-Jan-2011
  *          Time: 20:26:19
  */
-@Beta
 @ClusterSafe
 public final class ZkHashMap<K,V>  implements ConcurrentMap<K,V> {
     private final ZkSegment<K,V>[] segments;

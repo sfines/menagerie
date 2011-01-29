@@ -15,7 +15,6 @@
  */
 package org.menagerie.collections;
 
-import org.menagerie.Beta;
 import org.menagerie.Serializer;
 
 import java.io.*;
@@ -36,7 +35,6 @@ import java.util.Map;
  *          Date: 08-Jan-2011
  *          Time: 10:58:20
  */
-@Beta
 public final class JavaEntrySerializer<K extends Serializable, V extends Serializable> implements Serializer<Map.Entry<K,V>> {
 
     @Override
