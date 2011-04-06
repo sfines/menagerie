@@ -15,20 +15,28 @@
  */
 package org.menagerie.collections;
 
+import java.util.AbstractQueue;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
-import org.menagerie.*;
+import org.menagerie.ClusterSafe;
+import org.menagerie.Serializer;
+import org.menagerie.ZkPrimitive;
+import org.menagerie.ZkSessionManager;
+import org.menagerie.ZkUtils;
 import org.menagerie.locks.ReentrantZkReadWriteLock;
-
-import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
 
 /**
  * Blocking Queue implementation based on ZooKeeper.
@@ -68,7 +76,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
      * @param serializer       the serializer to use
      * @param zkSessionManager the session manager to use
      */
-    protected ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager) {
+    public ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager) {
         this(baseNode,serializer,zkSessionManager, ZooDefs.Ids.OPEN_ACL_UNSAFE);
     }
 
@@ -80,7 +88,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
      * @param zkSessionManager the session manager to use
      * @param privileges       the privileges for this node.
      */
-    protected ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, List<ACL> privileges) {
+    public ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, List<ACL> privileges) {
         sync = new UnboundedSync<E>(baseNode,zkSessionManager,privileges,serializer);
     }
 
@@ -92,7 +100,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
      * @param zkSessionManager the session manager to use
      * @param bound            the maximum size of the queue
      */
-    protected ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, int bound) {
+    public ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, int bound) {
         this(baseNode,serializer,zkSessionManager,ZooDefs.Ids.OPEN_ACL_UNSAFE,bound);
     }
 
@@ -105,7 +113,7 @@ public final class ZkBlockingQueue<E> extends AbstractQueue<E> implements Blocki
      * @param privileges       the privileges for this node.
      * @param bound            the maximum size of the queue
      */
-    protected ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, List<ACL> privileges, int bound) {
+    public ZkBlockingQueue(String baseNode, Serializer<E> serializer, ZkSessionManager zkSessionManager, List<ACL> privileges, int bound) {
         if(bound<0)
             throw new IllegalArgumentException("Cannot create a queue with a bound less than zero!");
         sync = new BoundedSync<E>(baseNode,bound,zkSessionManager,privileges,serializer);
