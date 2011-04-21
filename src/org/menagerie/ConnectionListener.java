@@ -38,4 +38,9 @@ public interface ConnectionListener {
      * in a valid state.
      */
     public void expired();
+
+    /**
+     * Fired to indicate that the ZooKeeper client has been disconnected from ZooKeeper
+     */
+//    public void disconnected();
 }

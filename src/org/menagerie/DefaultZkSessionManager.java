@@ -15,6 +15,7 @@
  */
 package org.menagerie;
 
+import org.apache.log4j.Logger;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
@@ -40,6 +41,7 @@ import java.util.concurrent.Executors;
  * @version 1.0
  */
 public class DefaultZkSessionManager implements ZkSessionManager{
+    private static final Logger logger = Logger.getLogger(DefaultZkSessionManager.class);
     //this could potentially be a very write-heavy list, so a synchronized list will perform better
     //than a more traditional CopyOnWriteArrayList would be
     private List<ConnectionListener> listeners = Collections.synchronizedList(new ArrayList<ConnectionListener>());
@@ -49,29 +51,69 @@ public class DefaultZkSessionManager implements ZkSessionManager{
     private final int timeout;
     private final ExecutorService executor;
     private volatile boolean shutdown;
+    private ZkSessionPoller poller;
+    private final int zkSessionPollInterval;
 
     /**
      * Creates a new instance of a DefaultZkSessionManager.
+     *
+     * <p>This is equivalent to calling {@code new DefaultZkSessionManager(connectionString, timeout, -1)}
      *
      * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
      * @param timeout the timeout to use before expiring the ZooKeeper session.
      */
     public DefaultZkSessionManager(String connectionString, int timeout) {
-        this(connectionString,timeout,Executors.newSingleThreadExecutor());
+        this(connectionString,timeout,Executors.newSingleThreadExecutor(),-1);
+    }
+
+    /**
+     * Creates a new instance of a DefaultZkSessionManager, using the specified zkSessionPollInterval to
+     * determine the polling interval to use for determining session expiration events.
+     *
+     * <p>If {@code zkSessionPollInterval} is less than zero, then no polling will be executed.
+     *
+     * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
+     * @param timeout the timeout to use before ZooKeeper expires a session
+     * @param zkSessionPollInterval the polling interval to use for manual session checking, or -1 if no
+     *          manual session checking is to be used
+     */
+    public DefaultZkSessionManager(String connectionString, int timeout, int zkSessionPollInterval){
+        this(connectionString,timeout,Executors.newSingleThreadExecutor(),zkSessionPollInterval);
     }
 
     /**
      * Creates a new instance of a DefaultZkSessionManager, using the specified ExecutorService to handle
      * ConnectionListener api calls.
      *
+     *
+     * <p>This is equivalent to calling {@code new DefaultZkSessionManager(connectionString, timeout,executor, -1)}
+     *
      * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
      * @param timeout the timeout to use before expiring the ZooKeeper session.
      * @param executor the executor to use in constructing calling threads.
      */
     public DefaultZkSessionManager(String connectionString, int timeout,ExecutorService executor) {
+        this(connectionString,timeout,executor,-1);
+    }
+
+    /**
+     * Creates a new instance of a DefaultZkSessionManager, using the specified zkSessionPollInterval to
+     * determine the polling interval to use for determining session expiration events, and using the
+     * specified ExecutorService to handle ConnectionListener api calls.
+     *
+     * <p>If {@code zkSessionPollInterval} is less than zero, then no polling will be executed.
+     *
+     * @param connectionString the string to connect to ZooKeeper with (in the form of (serverIP):(port),...)
+     * @param timeout the timeout to use before ZooKeeper expires a session
+     * @param executor the executor to use in constructing calling threads
+     * @param zkSessionPollInterval the polling interval to use for manual session checking, or -1 if no
+     *          manual session checking is to be used
+     */
+    public DefaultZkSessionManager(String connectionString, int timeout, ExecutorService executor, int zkSessionPollInterval){
         this.connectionString = connectionString;
         this.timeout = timeout;
         this.executor = executor;
+        this.zkSessionPollInterval = zkSessionPollInterval;
     }
 
 
@@ -83,7 +125,16 @@ public class DefaultZkSessionManager implements ZkSessionManager{
             try {
                 zk = new ZooKeeper(connectionString,timeout,new SessionWatcher(this));
             } catch (IOException e) {
+                logger.error(e);
                 throw new RuntimeException(e);
+            }
+            if(zkSessionPollInterval>0){
+                //stop any previous polling, if it hasn't been stopped already
+                if(poller!=null){
+                    poller.stopPolling();
+                }
+                //create a new poller for this ZooKeeper instance
+                poller = new ZkSessionPoller(zk,zkSessionPollInterval,new SessionPollListener(zk,this));
             }
         }else{
             //make sure that your zookeeper instance is synced
@@ -103,6 +154,8 @@ public class DefaultZkSessionManager implements ZkSessionManager{
         }
         return zk;
     }
+
+
 
     @Override
     public synchronized void closeSession() {
@@ -133,8 +186,13 @@ public class DefaultZkSessionManager implements ZkSessionManager{
 /*--------------------------------------------------------------------------------------------------------------------*/
     /*private helper methods */
 
+
+
     private void notifyListeners(WatchedEvent event) {
-        final Watcher.Event.KeeperState state = event.getState();
+        notifyState(event.getState());
+    }
+
+    private void notifyState(final Watcher.Event.KeeperState state) {
         executor.submit(new Runnable() {
             @Override
             public void run() {
@@ -155,6 +213,33 @@ public class DefaultZkSessionManager implements ZkSessionManager{
         });
     }
 
+    private static class SessionPollListener implements ConnectionListener{
+        private final ZooKeeper zk;
+        private final DefaultZkSessionManager sessionManager;
+
+        private SessionPollListener(ZooKeeper zk, DefaultZkSessionManager sessionManager) {
+            this.zk = zk;
+            this.sessionManager = sessionManager;
+        }
+
+        @Override
+        public void syncConnected() {
+            //do nothing, since we aren't interested
+        }
+
+        @Override
+        public void expired() {
+            logger.info("Session expiration has been detected. Notifying all connection listeners and cleaning up ZooKeeper State");
+            //notify applications
+            sessionManager.notifyState(Watcher.Event.KeeperState.Expired);
+            //shut down this ZooKeeper instance
+            try {
+                zk.close();
+            } catch (InterruptedException e) {
+                logger.warn("An InterruptedException was detected while attempting to close a ZooKeeper instance; ignoring because we're shutting it down anyway");
+            }
+        }
+    }
     private static class SessionWatcher implements Watcher{
         private final DefaultZkSessionManager manager;
 
