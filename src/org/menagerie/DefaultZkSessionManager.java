@@ -135,6 +135,7 @@ public class DefaultZkSessionManager implements ZkSessionManager{
                 }
                 //create a new poller for this ZooKeeper instance
                 poller = new ZkSessionPoller(zk,zkSessionPollInterval,new SessionPollListener(zk,this));
+                poller.startPolling();
             }
         }else{
             //make sure that your zookeeper instance is synced
