@@ -176,7 +176,7 @@ public class ZkPrimitive {
     }
 
     
-    private static class PrimitiveConnectionListener implements ConnectionListener{
+    private static class PrimitiveConnectionListener extends ConnectionListenerSkeleton{
         private final ZkPrimitive primitive;
 
         private PrimitiveConnectionListener(ZkPrimitive primitive) {

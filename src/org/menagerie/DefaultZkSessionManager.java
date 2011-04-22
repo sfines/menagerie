@@ -209,23 +209,26 @@ public class DefaultZkSessionManager implements ZkSessionManager{
                     for(ConnectionListener listener:listeners){
                         listener.syncConnected();
                     }
+                }else if(state ==Watcher.Event.KeeperState.Disconnected){
+                    for(ConnectionListener listener:listeners){
+                        listener.disconnected();
+                    }
                 }
             }
         });
     }
 
-    private static class SessionPollListener implements ConnectionListener{
+    /*
+    * Implementation to attach to the ZkSessionPoller for listening SPECIFICALLY for session expiration events
+    * No other events are fired by the Sessionpoller, and no others need to be listened to.
+    */
+    private static class SessionPollListener extends ConnectionListenerSkeleton{
         private final ZooKeeper zk;
         private final DefaultZkSessionManager sessionManager;
 
         private SessionPollListener(ZooKeeper zk, DefaultZkSessionManager sessionManager) {
             this.zk = zk;
             this.sessionManager = sessionManager;
-        }
-
-        @Override
-        public void syncConnected() {
-            //do nothing, since we aren't interested
         }
 
         @Override
