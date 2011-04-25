@@ -181,5 +181,30 @@ public class ZkBlockingQueueUnboundedSingleThread extends MenagerieTest{
         assertTrue("poll returned an element!",nullElement==null);
     }
 
+    @Test(timeout = 1000l)
+    public void testTimedPollSuccessfullyReturns() throws Exception{
+        assertEquals("Queue is not reporting empty!",0,testQueue.size());
+
+        testQueue.put("Test Element");
+
+        //do a timed take, and make sure it is correct
+        String retString = testQueue.poll(5, TimeUnit.SECONDS);
+        assertEquals("Test Element",retString);
+    }
+
+    @Test(timeout = 1000l)
+    public void testTimedPollSuccessfullyReturnsAfterPeek() throws Exception{
+        assertEquals("Queue is not reporting empty!",0,testQueue.size());
+
+        testQueue.put("Test Element");
+
+        //first do a peek, and see what happens
+        String retString = testQueue.peek();
+        assertEquals("Test Element",retString);
+        //do a timed take, and make sure it is correct
+        retString = testQueue.poll(5, TimeUnit.SECONDS);
+        assertEquals("Test Element",retString);
+    }
+
 
 }
