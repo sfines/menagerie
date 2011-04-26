@@ -18,6 +18,7 @@ package org.menagerie.locks;
 import org.apache.zookeeper.*;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 import org.menagerie.ZkSessionManager;
@@ -235,6 +236,7 @@ public class ReentrantZkLock2Test {
     
 
     @Test(timeout = 1500l)
+    @Ignore("Ignored until Conditions are fully implemented in ReentrantZkLock2")
     public void testConditionWaitsForSignalOtherThread() throws Exception{
         final Lock firstLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
         final Condition firstCondition = firstLock.newCondition();
@@ -263,6 +265,7 @@ public class ReentrantZkLock2Test {
     }
 
     @Test(timeout = 1500l)
+    @Ignore("Ignored until Conditions are fully implemented in ReentrantZkLock2")
     public void testConditionWaitsForSignalOtherClient() throws Exception{
         final Lock firstLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
         final Condition firstCondition = firstLock.newCondition();
@@ -299,6 +302,7 @@ public class ReentrantZkLock2Test {
     }
 
     @Test(timeout = 1000l)
+    @Ignore("Ignored until Conditions are fully implemented in ReentrantZkLock2")
     public void testConditionTimesOut() throws Exception{
         Lock firstLock = new ReentrantZkLock2(baseLockPath,zkSessionManager);
         Condition firstCondition = firstLock.newCondition();
