@@ -292,6 +292,21 @@ public class ZkUtils {
         }
     }
 
+    public static String recursiveSafeCreate(ZooKeeper zk, String node,byte[] data,List<ACL> privileges,CreateMode createMode) throws KeeperException,InterruptedException{
+        if(node==null||node.length()<0)return node; //nothing to do
+        else if("/".equals(node))return node; //can't create any further
+        else{
+            int index = node.lastIndexOf("/");
+            if(index==-1) return node; //nothing to do
+            String parent = node.substring(0,index);
+            //make sure that the parent has been created
+            recursiveSafeCreate(zk,parent,data,privileges,createMode);
+
+            //create this node now
+            return safeCreate(zk,node,data,privileges,createMode);
+        }
+    }
+
 /*--------------------------------------------------------------------------------------------------------------------*/
     /*private helper classes*/
     private static class SequenceComparator implements Comparator<String>{
