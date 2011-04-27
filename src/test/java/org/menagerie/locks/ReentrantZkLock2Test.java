@@ -56,6 +56,8 @@ public class ReentrantZkLock2Test {
     private static ZooKeeper zk;
     private static ZkSessionManager zkSessionManager;
 
+
+    
     @Before
     public void setup() throws Exception {
 
@@ -66,6 +68,8 @@ public class ReentrantZkLock2Test {
         zk.create(baseLockPath,new byte[]{}, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
         zkSessionManager = new BaseZkSessionManager(zk);
+
+
     }
 
     @After

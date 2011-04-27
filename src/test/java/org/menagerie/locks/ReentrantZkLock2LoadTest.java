@@ -4,19 +4,14 @@ import org.apache.zookeeper.*;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.menagerie.BaseZkSessionManager;
-import org.menagerie.TimingAccumulator;
-import org.menagerie.ZkSessionManager;
-import org.menagerie.ZkUtils;
+import org.menagerie.*;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 /**
@@ -35,10 +30,11 @@ public class ReentrantZkLock2LoadTest {
     private static ZkSessionManager zkSessionManager;
 
     private static final int concurrency = 10;
-    private static final int MAX_LOCK_ATTEMPTS = 1000;
-    private static final float insertThreshold =0.75f;
+    private static final int MAX_LOCK_ATTEMPTS = 10000;
 
-    private final ExecutorService testService = Executors.newFixedThreadPool(concurrency);
+
+    private final ExecutorService testService = Executors.newFixedThreadPool(concurrency,new TestingThreadFactory());
+
     @Before
     public void setup() throws Exception {
 
@@ -73,15 +69,12 @@ public class ReentrantZkLock2LoadTest {
         The point of this test is to help increase confidence in the lock by showing that it
         does not deadlock under contention from tens to hundreds of threads.
 
-        To have this kind of confidence, we have an unsynchronized map, which we use a distributed
-        Lock to guard against. Each Thread then will acquire the lock, then with a probability of 0.75
-        will add an entry, and with probability of 0.25 will delete a random entry, then it will release
-        the lock, allowing the next node access. Each thread will do this MAX_LOCK_ATTEMPTS times, then
-        exit.
+        To have this kind of confidence, we have an unsafe operator, which we call
+        in sequence after acquiring the lock. We can verify that it was correct by
+         at the end checking that our total is what it should be
         */
 
-        final Map<Integer,Integer> guardedMap = new HashMap<Integer, Integer>();
-        final Random random = new Random();
+        final UnsafeOperator operator = new UnsafeOperator();
         final CyclicBarrier startLatch = new CyclicBarrier(concurrency+1);
         final CyclicBarrier endLatch = new CyclicBarrier(concurrency+1);
         final TimingAccumulator timer = new TimingAccumulator();
@@ -101,7 +94,7 @@ public class ReentrantZkLock2LoadTest {
                     Lock guard = new ReentrantZkLock2(baseLockPath,zksm);
                     long totalStart = System.currentTimeMillis();
                     for(int i=0;i<MAX_LOCK_ATTEMPTS;i++){
-                        timer.addTiming(guardedWork(guard,random,insertThreshold,guardedMap));
+                        timer.addTiming(guardedWork(guard,operator));
                     }
                     long totalEnd = System.currentTimeMillis();
                     long totalTime = totalEnd-totalStart;
@@ -130,6 +123,8 @@ public class ReentrantZkLock2LoadTest {
         //enter the end latch to wait on things finishing
         endLatch.await();
 
+        int numberOfOperations = MAX_LOCK_ATTEMPTS*concurrency;
+        assertEquals("Incorrect incrementing!",numberOfOperations,operator.getValue());
         timer.printResults();
 
     }
@@ -140,15 +135,11 @@ public class ReentrantZkLock2LoadTest {
         The point of this test is to help increase confidence in the lock by showing that it
         does not deadlock under contention from tens to hundreds of threads.
 
-        To have this kind of confidence, we have an unsynchronized map, which we use a distributed
-        Lock to guard against. Each Thread then will acquire the lock, then with a probability of 0.75
-        will add an entry, and with probability of 0.25 will delete a random entry, then it will release
-        the lock, allowing the next node access. Each thread will do this MAX_LOCK_ATTEMPTS times, then
-        exit.
+        To have this kind of confidence, we have an unsafe operator, which we call
+        in sequence after acquiring the lock. We can verify that it was correct by
+         at the end checking that our total is what it should be
         */
-
-        final Map<Integer,Integer> guardedMap = new HashMap<Integer, Integer>();
-        final Random random = new Random();
+        final UnsafeOperator operator = new UnsafeOperator();
         final CyclicBarrier startLatch = new CyclicBarrier(concurrency+1);
         final CyclicBarrier endLatch = new CyclicBarrier(concurrency+1);
         final TimingAccumulator timer = new TimingAccumulator();
@@ -166,7 +157,7 @@ public class ReentrantZkLock2LoadTest {
                     Lock guard = new ReentrantZkLock2(baseLockPath,zkSessionManager);
                     long totalStart = System.currentTimeMillis();
                     for(int i=0;i<MAX_LOCK_ATTEMPTS;i++){
-                        timer.addTiming(guardedWork(guard,random,insertThreshold,guardedMap));
+                        timer.addTiming(guardedWork(guard,operator));
                     }
                     long totalEnd = System.currentTimeMillis();
                     long totalTime = totalEnd-totalStart;
@@ -194,6 +185,8 @@ public class ReentrantZkLock2LoadTest {
         //enter the end latch to wait on things finishing
         endLatch.await();
 
+        int numberOfOperations = MAX_LOCK_ATTEMPTS*concurrency;
+        assertEquals("Incorrect incrementing!",numberOfOperations,operator.getValue());
         timer.printResults();
 
     }
@@ -205,15 +198,12 @@ public class ReentrantZkLock2LoadTest {
         The point of this test is to help increase confidence in the lock by showing that it
         does not deadlock under contention from tens to hundreds of threads.
 
-        To have this kind of confidence, we have an unsynchronized map, which we use a distributed
-        Lock to guard against. Each Thread then will acquire the lock, then with a probability of 0.75
-        will add an entry, and with probability of 0.25 will delete a random entry, then it will release
-        the lock, allowing the next node access. Each thread will do this MAX_LOCK_ATTEMPTS times, then
-        exit.
+        To have this kind of confidence, we have an unsafe operator, which we call
+        in sequence after acquiring the lock. We can verify that it was correct by
+         at the end checking that our total is what it should be
         */
 
-        final Map<Integer,Integer> guardedMap = new HashMap<Integer, Integer>();
-        final Random random = new Random();
+        final UnsafeOperator operator = new UnsafeOperator();
         final CyclicBarrier startLatch = new CyclicBarrier(concurrency+1);
         final CyclicBarrier endLatch = new CyclicBarrier(concurrency+1);
         final Lock guard = new ReentrantZkLock2(baseLockPath,zkSessionManager);
@@ -233,7 +223,7 @@ public class ReentrantZkLock2LoadTest {
 
                     long totalStart = System.currentTimeMillis();
                     for(int i=0;i<MAX_LOCK_ATTEMPTS;i++){
-                        timer.addTiming(guardedWork(guard,random,insertThreshold,guardedMap));
+                        timer.addTiming(guardedWork(guard,operator));
                     }
                     long totalEnd = System.currentTimeMillis();
 
@@ -262,26 +252,22 @@ public class ReentrantZkLock2LoadTest {
         //enter the end latch to wait on things finishing
         endLatch.await();
 
+        int numberOfOperations = MAX_LOCK_ATTEMPTS*concurrency;
+        assertEquals("Incorrect incrementing!",numberOfOperations,operator.getValue());
         timer.printResults();
     }
 
 
-    private long guardedWork(Lock guard, Random random, float insertThreshold, Map<Integer, Integer> guardedMap) {
+    private long guardedWork(Lock guard, UnsafeOperator operator) {
         long start = System.currentTimeMillis();
         guard.lock();
         try{
-            float shouldInsertOrDelete = random.nextFloat();
-            if(shouldInsertOrDelete<insertThreshold){
-                guardedMap.put(random.nextInt(),1);
-            }else{
-                guardedMap.remove(random.nextInt());
-            }
+            operator.increment();
         }finally{
             guard.unlock();
         }
         long end = System.currentTimeMillis();
-        long timing = end - start;
-        return timing;
+        return end - start;
     }
 
     private static ZooKeeper newZooKeeper() throws IOException {
@@ -292,4 +278,17 @@ public class ReentrantZkLock2LoadTest {
             }
         });
     }
+
+    private static class UnsafeOperator{
+        private int operator;
+
+        public void increment(){
+            operator++;
+        }
+
+        public int getValue(){
+            return operator;
+        }
+    }
+    
 }

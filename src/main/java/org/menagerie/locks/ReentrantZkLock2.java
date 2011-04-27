@@ -47,7 +47,7 @@ public class ReentrantZkLock2 implements Lock {
         this.executor = executor;
         this.privileges = privileges;
         this.baseNode = baseNode;
-        localLock = new ReentrantLock(); 
+        localLock = new ReentrantLock(true); 
         condition = localLock.newCondition();
         try{
             machineId = InetAddress.getLocalHost().getHostName();
@@ -75,7 +75,7 @@ public class ReentrantZkLock2 implements Lock {
                                 condition.awaitUninterruptibly();
                             }else{
                                 //we have the lock, so we're done here
-                                holder.setHoldingThread();
+                                holder.setHoldingThread(lockNode);
                                 return null;
                             }
                         }finally{
@@ -146,7 +146,7 @@ public class ReentrantZkLock2 implements Lock {
                             if(!acquired){
                                 timeoutNanos = condition.awaitNanos(timeoutNanos);
                             }else{
-                                holder.setHoldingThread();
+                                holder.setHoldingThread(lockNode);
                                 return true;
                             }
                         }finally{
@@ -173,11 +173,7 @@ public class ReentrantZkLock2 implements Lock {
                 executor.execute(new ZkCommand<Void>() {
                     @Override
                     public Void execute(ZooKeeper zk) throws KeeperException, InterruptedException {
-                        String lockNode = getNodeCommand().execute(zk);
-                        if(lockNode==null)return null; //nothing to do
-
-                        //delete the lock node
-                        ZkUtils.safeDelete(zk,baseNode+"/"+lockNode,-1);
+                        ZkUtils.safeDelete(zk,holder.getLockNode(),-1);
                         return null;
                     }
                 });
@@ -203,7 +199,6 @@ public class ReentrantZkLock2 implements Lock {
     protected boolean tryAcquireDistributed(ZooKeeper zk, String lockNode, boolean watch) throws KeeperException, InterruptedException {
         List<String> locks = ZkUtils.filterByPrefix(zk.getChildren(baseNode,false),getLockPrefix());
         ZkUtils.sortBySequence(locks,'-');
-//        System.out.printf("%d - lockChildren=%s%n",Thread.currentThread().getId(),locks);
         String myNodeName = lockNode.substring(lockNode.lastIndexOf('/')+1);
         int myPos = locks.indexOf(myNodeName);
 
@@ -316,13 +311,15 @@ public class ReentrantZkLock2 implements Lock {
         }
     }
 
-    private class LockHolder {
+    private class LockHolder{
         private final AtomicReference<Thread> holdingThread = new AtomicReference<Thread>();
+        private volatile String lockNode;
         private final AtomicInteger holdCount = new AtomicInteger(0);
 
-        public void setHoldingThread(){
+        public void setHoldingThread(String lockNode){
             holdingThread.set(Thread.currentThread());
             holdCount.set(1);
+            this.lockNode = lockNode;
         }
 
         public boolean increment(){
@@ -343,6 +340,10 @@ public class ReentrantZkLock2 implements Lock {
             }else{
                 return holdCount.get();
             }
+        }
+
+        public String getLockNode(){
+            return lockNode;
         }
     }
 }
