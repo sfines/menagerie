@@ -5,6 +5,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.menagerie.*;
+import org.menagerie.util.TestingThreadFactory;
+import org.menagerie.util.TimingAccumulator;
 
 import java.io.IOException;
 import java.util.List;
@@ -30,7 +32,7 @@ public class ReentrantZkLock2LoadTest {
     private static ZkSessionManager zkSessionManager;
 
     private static final int concurrency = 10;
-    private static final int MAX_LOCK_ATTEMPTS = 10000;
+    private static final int MAX_LOCK_ATTEMPTS = 1000;
 
 
     private final ExecutorService testService = Executors.newFixedThreadPool(concurrency,new TestingThreadFactory());
@@ -279,16 +281,4 @@ public class ReentrantZkLock2LoadTest {
         });
     }
 
-    private static class UnsafeOperator{
-        private int operator;
-
-        public void increment(){
-            operator++;
-        }
-
-        public int getValue(){
-            return operator;
-        }
-    }
-    
 }

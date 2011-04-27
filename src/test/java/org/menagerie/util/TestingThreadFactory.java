@@ -1,4 +1,4 @@
-package org.menagerie;
+package org.menagerie.util;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;

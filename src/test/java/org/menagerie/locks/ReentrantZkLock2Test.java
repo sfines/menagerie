@@ -26,14 +26,12 @@ import org.menagerie.ZkUtils;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
 import static junit.framework.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 /**
@@ -318,6 +316,93 @@ public class ReentrantZkLock2Test {
     }
 
 
+    @Test(timeout = 10000l)
+    public void testLockWorksUnderContentionDifferentClients() throws Exception{
+        int numThreads = 10;
+        final int numIterations = 100;
+        ExecutorService service = Executors.newFixedThreadPool(numThreads);
+        final CyclicBarrier startBarrier = new CyclicBarrier(numThreads+1);
+        final CyclicBarrier endBarrier = new CyclicBarrier(numThreads+1);
+
+        final UnsafeOperator operator = new UnsafeOperator();
+        for(int i=0;i<numThreads;i++){
+            service.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    startBarrier.await(); //make sure all threads are in the same place before starting
+
+                    //create the lock that we're going to use
+                    ZooKeeper zk = newZooKeeper();
+                    Lock testLock = new ReentrantZkLock2(baseLockPath,new BaseZkSessionManager(zk));
+                    for(int j=0;j<numIterations;j++){
+                        testLock.lock();
+                        try{
+                            operator.increment();
+                        }finally{
+                            testLock.unlock();
+                        }
+                    }
+
+                    //enter the end barrier to ensure that things are finished
+                    endBarrier.await();
+                    return null;
+                }
+            });
+        }
+
+        //start the test
+        startBarrier.await();
+
+        //wait for the end of the test
+        endBarrier.await();
+
+        //check that the number of operations that actually were recorded are correct
+        int correctOps = numIterations*numThreads;
+        assertEquals("Number of Operations recorded was incorrect!",correctOps,operator.getValue());
+    }
+
+    @Test(timeout = 10000l)
+    public void testLockWorksUnderContentionSameClient() throws Exception{
+        int numThreads = 10;
+        final int numIterations = 100;
+        ExecutorService service = Executors.newFixedThreadPool(numThreads);
+        final CyclicBarrier startBarrier = new CyclicBarrier(numThreads+1);
+        final CyclicBarrier endBarrier = new CyclicBarrier(numThreads+1);
+
+        final UnsafeOperator operator = new UnsafeOperator();
+        final Lock testLock = new ReentrantZkLock2(baseLockPath,zkSessionManager);
+        for(int i=0;i<numThreads;i++){
+            service.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    startBarrier.await(); //make sure all threads are in the same place before starting
+
+                    for(int j=0;j<numIterations;j++){
+                        testLock.lock();
+                        try{
+                            operator.increment();
+                        }finally{
+                            testLock.unlock();
+                        }
+                    }
+
+                    //enter the end barrier to ensure that things are finished
+                    endBarrier.await();
+                    return null;
+                }
+            });
+        }
+
+        //start the test
+        startBarrier.await();
+
+        //wait for the end of the test
+        endBarrier.await();
+
+        //check that the number of operations that actually were recorded are correct
+        int correctOps = numIterations*numThreads;
+        assertEquals("Number of Operations recorded was incorrect!",correctOps,operator.getValue());
+    }
 
     private static ZooKeeper newZooKeeper() throws IOException {
         return new ZooKeeper(hostString, timeout,new Watcher() {

@@ -1,4 +1,4 @@
-package org.menagerie;
+package org.menagerie.util;
 
 import java.util.ArrayList;
 import java.util.Collections;
