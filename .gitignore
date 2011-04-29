@@ -10,6 +10,8 @@ local.properties
 .classpath
 .settings/
 .loadpath
+*.iml
+.idea/**
 build/
 dist/
 docs/
