@@ -20,6 +20,7 @@ import org.junit.Test;
 import org.menagerie.JavaSerializer;
 import org.menagerie.MenagerieTest;
 import org.menagerie.Serializer;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.util.concurrent.*;
 
@@ -38,7 +39,7 @@ public class ZkBlockingQueueBoundedMultiThreadedTest extends MenagerieTest{
 
     Serializer<String> serializer = new JavaSerializer<String>();
 
-    private static final ExecutorService service = Executors.newFixedThreadPool(2);
+    private static final ExecutorService service = Executors.newFixedThreadPool(2,new TestingThreadFactory());
     private static final int bound = 5;
     @AfterClass
     public static void shutdownAll(){

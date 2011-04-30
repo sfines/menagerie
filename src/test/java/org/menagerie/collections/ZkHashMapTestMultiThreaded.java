@@ -18,6 +18,7 @@ package org.menagerie.collections;
 import org.junit.Test;
 import org.menagerie.MenagerieTest;
 import org.menagerie.Serializer;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -37,7 +38,7 @@ public class ZkHashMapTestMultiThreaded extends MenagerieTest{
     private static ZkHashMap<String,String> testMap;
     private static Serializer<Map.Entry<String,String>> serializer;
 
-    private static ExecutorService service = Executors.newFixedThreadPool(2);
+    private static ExecutorService service = Executors.newFixedThreadPool(2,new TestingThreadFactory());
 
     @Override
     protected void prepare() {

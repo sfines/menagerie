@@ -21,6 +21,7 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -43,7 +44,7 @@ public class ZkCountDownLatchTest {
     private static ZooKeeper zk;
     private static final String baseBarrierPath = "/test-barriers";
     private static final int timeout = 200000;
-    private static final ExecutorService executor = Executors.newFixedThreadPool(3);
+    private static final ExecutorService executor = Executors.newFixedThreadPool(3, new TestingThreadFactory());
 
     private ZkCountDownLatch countDownLatch;
 

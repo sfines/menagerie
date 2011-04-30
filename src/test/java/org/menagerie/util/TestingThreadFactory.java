@@ -1,5 +1,7 @@
 package org.menagerie.util;
 
+import org.junit.Ignore;
+
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -8,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *         Date: Apr 26, 2011
  *         Time: 6:54:31 PM
  */
+@Ignore
 public class TestingThreadFactory implements ThreadFactory {
     private final AtomicInteger counter = new AtomicInteger(0);
     @Override

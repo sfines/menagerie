@@ -20,6 +20,7 @@ import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 import org.menagerie.MenagerieTest;
 import org.menagerie.Serializer;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -39,7 +40,7 @@ public class ZkHashMapTestMultiClient extends MenagerieTest{
     private static ZkHashMap<String,String> testMap;
     private static Serializer<Map.Entry<String,String>> serializer;
 
-    private static ExecutorService service = Executors.newFixedThreadPool(2);
+    private static ExecutorService service = Executors.newFixedThreadPool(2,new TestingThreadFactory());
 
     @Override
     protected void prepare() {
@@ -63,17 +64,21 @@ public class ZkHashMapTestMultiClient extends MenagerieTest{
             @Override
             public String call() throws Exception {
                 ZooKeeper newZk = newZooKeeper();
-                @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
-                ZkHashMap<String, String> myMap = new ZkHashMap<String, String>(testPath, new BaseZkSessionManager(newZk), serializer);
-                waiter.await(); //wait until all threads are ready to test
+                try{
+                    @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
+                    ZkHashMap<String, String> myMap = new ZkHashMap<String, String>(testPath, new BaseZkSessionManager(newZk), serializer);
+                    waiter.await(); //wait until all threads are ready to test
 
-                String myTestValue=null;
-                while(myTestValue==null){
-                    System.out.println("Calling get!");
-                    myTestValue = myMap.get(testKey);
-                    System.out.println("Get returned correctly!");
+                    String myTestValue=null;
+                    while(myTestValue==null){
+                        System.out.println("Calling get!");
+                        myTestValue = myMap.get(testKey);
+                        System.out.println("Get returned correctly!");
+                    }
+                    return myTestValue;
+                }finally{
+                    newZk.close();
                 }
-                return myTestValue;
             }
         });
 
@@ -110,13 +115,17 @@ public class ZkHashMapTestMultiClient extends MenagerieTest{
             @Override
             public Boolean call() throws Exception {
                 ZooKeeper newZk = newZooKeeper();
-                @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
-                ZkHashMap<String, String> myMap = new ZkHashMap<String, String>(testPath, new BaseZkSessionManager(newZk), serializer);
-                waiter.await(); //wait until all threads are ready to test
+                try{
+                    @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
+                    ZkHashMap<String, String> myMap = new ZkHashMap<String, String>(testPath, new BaseZkSessionManager(newZk), serializer);
+                    waiter.await(); //wait until all threads are ready to test
 
-                //call put-if-absent and see if I won!
-                String myReturnedTestValue = myMap.putIfAbsent(testKey, testValue1);
-                return myReturnedTestValue.equals(testValue1);
+                    //call put-if-absent and see if I won!
+                    String myReturnedTestValue = myMap.putIfAbsent(testKey, testValue1);
+                    return myReturnedTestValue.equals(testValue1);
+                }finally{
+                    newZk.close();
+                }
             }
         });
 

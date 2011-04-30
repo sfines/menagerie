@@ -18,6 +18,7 @@ package org.menagerie.locks;
 import org.apache.zookeeper.ZooDefs;
 import org.junit.Test;
 import org.menagerie.MenagerieTest;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
@@ -32,10 +33,10 @@ import static org.junit.Assert.assertTrue;
  */
 public class ZkReadWriteLockTest extends MenagerieTest {
 
-    private static final ExecutorService testService = Executors.newFixedThreadPool(2);
+    private static final ExecutorService testService = Executors.newFixedThreadPool(2, new TestingThreadFactory());
 
 
-     @Override
+    @Override
     protected void prepare() {
         //To change body of implemented methods use File | Settings | File Templates.
     }

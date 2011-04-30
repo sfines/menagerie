@@ -22,6 +22,7 @@ import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -47,7 +48,7 @@ public class ReentrantZkLockTest {
     private static final String hostString = "localhost:2181";
     private static final String baseLockPath = "/test-locks";
     private static final int timeout = 2000;
-    private static final ExecutorService testService = Executors.newFixedThreadPool(2);
+    private static final ExecutorService testService = Executors.newFixedThreadPool(2, new TestingThreadFactory());
 
     private static ZooKeeper zk;
     private static ZkSessionManager zkSessionManager;
@@ -58,7 +59,7 @@ public class ReentrantZkLockTest {
         zk = newZooKeeper();
 
         //be sure that the lock-place is created
-
+        ZkUtils.recursiveSafeDelete(zk,baseLockPath,-1);
         zk.create(baseLockPath,new byte[]{}, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
         zkSessionManager = new BaseZkSessionManager(zk);
@@ -76,7 +77,7 @@ public class ReentrantZkLockTest {
         }catch(KeeperException ke){
             //suppress because who cares what went wrong after our tests did their thing?
         }finally{
-            zk.close();
+            closeZooKeeper(zk);
         }
     }
 
@@ -198,7 +199,7 @@ public class ReentrantZkLockTest {
 
     @Test(timeout = 10000l)
     public void testLockWorksUnderContentionDifferentClients() throws Exception{
-        int numThreads = 10;
+        int numThreads =5;
         final int numIterations = 100;
         ExecutorService service = Executors.newFixedThreadPool(numThreads);
         final CyclicBarrier startBarrier = new CyclicBarrier(numThreads+1);
@@ -212,9 +213,9 @@ public class ReentrantZkLockTest {
                     startBarrier.await(); //make sure all threads are in the same place before starting
 
                     //create the lock that we're going to use
-                    ZooKeeper zk = newZooKeeper();
+                    ZooKeeper newZk = newZooKeeper();
                     try{
-                        Lock testLock = new ReentrantZkLock(baseLockPath,new BaseZkSessionManager(zk));
+                        Lock testLock = new ReentrantZkLock(baseLockPath,new BaseZkSessionManager(newZk));
                         for(int j=0;j<numIterations;j++){
                             testLock.lock();
                             try{
@@ -224,7 +225,7 @@ public class ReentrantZkLockTest {
                             }
                         }
                     }finally{
-                        zk.close();
+                        closeZooKeeper(newZk);
                     }
                     //enter the end barrier to ensure that things are finished
                     endBarrier.await();
@@ -246,7 +247,7 @@ public class ReentrantZkLockTest {
 
     @Test(timeout = 10000l)
     public void testLockWorksUnderContentionSameClient() throws Exception{
-        int numThreads = 10;
+        int numThreads = 5;
         final int numIterations = 100;
         ExecutorService service = Executors.newFixedThreadPool(numThreads);
         final CyclicBarrier startBarrier = new CyclicBarrier(numThreads+1);
@@ -322,24 +323,26 @@ public class ReentrantZkLockTest {
 
         firstLock.lock();
         //fire off a thread that will signal the main process thread
-        testService.submit(new Runnable() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
                 final Lock otherClientLock;
+                ZooKeeper newZk = newZooKeeper();
                 try {
-                    otherClientLock = new ReentrantZkLock(baseLockPath, new BaseZkSessionManager(newZooKeeper()));
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                final Condition otherClientCondition = otherClientLock.newCondition();
-                otherClientLock.lock();
-                System.out.println("Lock acquired on second thread");
-                try{
-                    otherClientCondition.signal();
-                    System.out.println("Lock signalled on second thread");
-                }finally{
-                    System.out.println("Lock released on second thread");
-                    otherClientLock.unlock();
+                    otherClientLock = new ReentrantZkLock(baseLockPath, new BaseZkSessionManager(newZk));
+                    final Condition otherClientCondition = otherClientLock.newCondition();
+                    otherClientLock.lock();
+                    System.out.println("Lock acquired on second thread");
+                    try {
+                        otherClientCondition.signal();
+                        System.out.println("Lock signalled on second thread");
+                    } finally {
+                        System.out.println("Lock released on second thread");
+                        otherClientLock.unlock();
+                    }
+                    return null;
+                } finally {
+                    closeZooKeeper(newZk);
                 }
             }
         });
@@ -349,6 +352,7 @@ public class ReentrantZkLockTest {
         firstCondition.await();
         System.out.println("First thread has been notified");
         firstLock.unlock();
+        errorFuture.get();
     }
 
     @Test(timeout = 1000l)
@@ -365,12 +369,18 @@ public class ReentrantZkLockTest {
 
 
     private static ZooKeeper newZooKeeper() throws IOException {
+        System.out.printf("%s: Creating new ZooKeeper%n", Thread.currentThread().getName());
         return new ZooKeeper(hostString, timeout,new Watcher() {
             @Override
             public void process(WatchedEvent event) {
-                System.out.println(event);
+//                System.out.println(event);
             }
         });
+    }
+
+    private static void closeZooKeeper(ZooKeeper zk) throws InterruptedException {
+        System.out.printf("%s: Closing ZooKeeper%n",Thread.currentThread().getName());
+        zk.close();
     }
 
 
