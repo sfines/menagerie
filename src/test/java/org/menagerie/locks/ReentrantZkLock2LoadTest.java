@@ -3,8 +3,11 @@ package org.menagerie.locks;
 import org.apache.zookeeper.*;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-import org.menagerie.*;
+import org.menagerie.BaseZkSessionManager;
+import org.menagerie.ZkSessionManager;
+import org.menagerie.ZkUtils;
 import org.menagerie.util.TestingThreadFactory;
 import org.menagerie.util.TimingAccumulator;
 
@@ -21,6 +24,7 @@ import static org.junit.Assert.fail;
  *         Date: Apr 26, 2011
  *         Time: 8:49:12 AM
  */
+@Ignore
 public class ReentrantZkLock2LoadTest {
 
     private static final String hostString = "localhost:2181";
@@ -92,20 +96,23 @@ public class ReentrantZkLock2LoadTest {
                         fail(String.format("%d - %s",Thread.currentThread().getId(),e.getMessage()));
                     }
                     ZooKeeper zk = newZooKeeper();
-                    ZkSessionManager zksm = new BaseZkSessionManager(zk);
-                    Lock guard = new ReentrantZkLock2(baseLockPath,zksm);
-                    long totalStart = System.currentTimeMillis();
-                    for(int i=0;i<MAX_LOCK_ATTEMPTS;i++){
-                        timer.addTiming(guardedWork(guard,operator));
+                    try{
+                        ZkSessionManager zksm = new BaseZkSessionManager(zk);
+                        Lock guard = new ReentrantZkLock2(baseLockPath,zksm);
+                        long totalStart = System.currentTimeMillis();
+                        for(int i=0;i<MAX_LOCK_ATTEMPTS;i++){
+                            timer.addTiming(guardedWork(guard,operator));
+                        }
+                        long totalEnd = System.currentTimeMillis();
+                        long totalTime = totalEnd-totalStart;
+                        float totalTimeSec = totalTime/1000f;
+                        int ops = MAX_LOCK_ATTEMPTS;
+                        float opsPerSec = ops/totalTimeSec;
+                        System.out.printf("%d - total time taken: %d ms \t total Operations performed: %d \t Ops/sec: %f%n",Thread.currentThread().getId(),totalTime,ops,opsPerSec);
+                    }finally{
+                        zk.close();
                     }
-                    long totalEnd = System.currentTimeMillis();
-                    long totalTime = totalEnd-totalStart;
-                    float totalTimeSec = totalTime/1000f;
-                    int ops = MAX_LOCK_ATTEMPTS;
-                    float opsPerSec = ops/totalTimeSec;
-                    System.out.printf("%d - total time taken: %d ms \t total Operations performed: %d \t Ops/sec: %f%n",Thread.currentThread().getId(),totalTime,ops,opsPerSec);
 
-                    
                     //enter the stop latch
                     try {
                         endLatch.await();

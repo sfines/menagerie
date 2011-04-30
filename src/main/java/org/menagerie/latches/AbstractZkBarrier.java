@@ -109,13 +109,7 @@ abstract class AbstractZkBarrier extends ZkPrimitive {
 
         //clear out any old data
         for(String latchChild:latchChildren){
-            try{
-                zk.delete(baseNode+"/"+latchChild,-1);
-            }catch(KeeperException ke){
-                //if the node has already been deleted, don't worry about it
-                if(ke.code()!=KeeperException.Code.NONODE)
-                    throw ke;
-            }
+            ZkUtils.safeDelete(zk,baseNode+"/"+latchChild,-1);
         }
     }
 }

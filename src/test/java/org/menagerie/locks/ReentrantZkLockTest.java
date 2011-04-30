@@ -213,16 +213,19 @@ public class ReentrantZkLockTest {
 
                     //create the lock that we're going to use
                     ZooKeeper zk = newZooKeeper();
-                    Lock testLock = new ReentrantZkLock(baseLockPath,new BaseZkSessionManager(zk));
-                    for(int j=0;j<numIterations;j++){
-                        testLock.lock();
-                        try{
-                            operator.increment();
-                        }finally{
-                            testLock.unlock();
+                    try{
+                        Lock testLock = new ReentrantZkLock(baseLockPath,new BaseZkSessionManager(zk));
+                        for(int j=0;j<numIterations;j++){
+                            testLock.lock();
+                            try{
+                                operator.increment();
+                            }finally{
+                                testLock.unlock();
+                            }
                         }
+                    }finally{
+                        zk.close();
                     }
-
                     //enter the end barrier to ensure that things are finished
                     endBarrier.await();
                     return null;

@@ -20,8 +20,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
+import org.menagerie.ZkUtils;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
@@ -38,7 +40,7 @@ public class ZkCyclicBarrierTest {
     private static ZooKeeper zk;
     private static final String baseBarrierPath = "/test-barriers";
     private static final int timeout = 5000;
-    private static final ExecutorService executor = Executors.newFixedThreadPool(3);
+    private static final ExecutorService executor = Executors.newFixedThreadPool(10);
 
     private ZkCyclicBarrier cyclicBarrier;
 
@@ -60,7 +62,7 @@ public class ZkCyclicBarrierTest {
         try{
             List<String> children = zk.getChildren(baseBarrierPath,false);
             for(String child:children){
-                zk.delete(baseBarrierPath +"/"+child,-1);
+                ZkUtils.recursiveSafeDelete(zk,baseBarrierPath+"/"+child,-1);
             }
             zk.delete(baseBarrierPath,-1);
 
@@ -75,8 +77,8 @@ public class ZkCyclicBarrierTest {
     @Test(timeout = 5000l)
     public void testBarrierWorks()throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(1, new BaseZkSessionManager(zk), baseBarrierPath);
-        long position = cyclicBarrier.await();
-        assertEquals("Position is incorrect!",0,position);
+        cyclicBarrier.await();
+        //this method would timeout if await doesn't move forward
     }
 
     @Test(timeout = 5000l)
@@ -103,58 +105,90 @@ public class ZkCyclicBarrierTest {
     public void testBarrierWorksWithTwoClients() throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(2, new BaseZkSessionManager(zk), baseBarrierPath);
 
-        ZooKeeper otherZooKeeper = newZooKeeper();
-        ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(2, new BaseZkSessionManager(otherZooKeeper), baseBarrierPath);
-
-        executor.submit(new Runnable() {
+        Future<Void> errorFuture = executor.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
+                ZooKeeper otherZooKeeper = newZooKeeper();
+                ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(2, new BaseZkSessionManager(otherZooKeeper), baseBarrierPath);
                 try {
-                    cyclicBarrier.await();
-                } catch (InterruptedException e) {
-                    fail(e.getMessage());
-                } catch (BrokenBarrierException e) {
-                    fail(e.getMessage());
+                    System.out.printf("%s: Waiting on barrier%n",Thread.currentThread().getName());
+                    otherCyclicBarrier.await();
+                } finally {
+                    otherZooKeeper.close();
                 }
+                System.out.printf("%s; Barrier returned on secondary thread%n",Thread.currentThread().getName());
+                return null;
             }
         });
+        System.out.printf("%s: Waiting on barrier%n",Thread.currentThread().getName());
+        cyclicBarrier.await();
+        System.out.printf("%s; Barrier returned on main thread%n",Thread.currentThread().getName());
+        //check to make sure any errors haven't happened, by looking for ExecutionExceptions
+        errorFuture.get();
+    }
 
-        otherCyclicBarrier.await();
+    @Test(timeout = 10000l)
+    public void testBarrierWorksWithManyClients() throws Exception{
+        final int numClients=9;
+        cyclicBarrier = new ZkCyclicBarrier(numClients, new BaseZkSessionManager(zk), baseBarrierPath);
+
+        List<Future<Void>> futures = new ArrayList<Future<Void>>(numClients);
+        for(int client=0;client<numClients;client++){
+            futures.add(executor.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    ZooKeeper otherZooKeeper = newZooKeeper();
+                    ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(numClients, new BaseZkSessionManager(otherZooKeeper), baseBarrierPath);
+                    try {
+                        System.out.printf("%s: Waiting on barrier%n",Thread.currentThread().getName());
+                        otherCyclicBarrier.await();
+                    } finally {
+                        otherZooKeeper.close();
+                    }
+                    System.out.printf("%s; Barrier returned on secondary thread%n",Thread.currentThread().getName());
+                    return null;
+                }
+            }));
+        }
+        System.out.printf("%s: Waiting on barrier%n",Thread.currentThread().getName());
+        cyclicBarrier.await();
+        System.out.printf("%s; Barrier returned on main thread%n",Thread.currentThread().getName());
+        //check to make sure any errors haven't happened, by looking for ExecutionExceptions
+        for(Future<Void> future:futures){
+            future.get();
+        }
     }
 
     @Test(timeout = 5000l, expected = TimeoutException.class)
     public void testBarrierTimeOutThrowsTimeoutException() throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(2, new BaseZkSessionManager(zk), baseBarrierPath);
-        assertEquals("Cyclic Barrier is not properly constructed!",1,zk.getChildren(baseBarrierPath,false).size());
+//        assertEquals("Cyclic Barrier is not properly constructed!",1,zk.getChildren(baseBarrierPath,false).size());
         cyclicBarrier.await(500, TimeUnit.MILLISECONDS);
     }
 
     @Test(timeout = 1000l, expected = BrokenBarrierException.class)
     public void testBarrierTimeoutCausesBrokenBarrierOnOtherThread() throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(3, new BaseZkSessionManager(zk), baseBarrierPath);
-        assertEquals("Cyclic Barrier is not properly constructed!",1,zk.getChildren(baseBarrierPath,false).size());
+//        assertEquals("Cyclic Barrier is not properly constructed!",1,zk.getChildren(baseBarrierPath,false).size());
 
-        executor.submit(new Runnable() {
+        Future<?> errorFuture = executor.submit(new Runnable() {
             @Override
             public void run() {
                 boolean thrown = false;
                 try {
-                    System.out.println(zk.getChildren(baseBarrierPath,false));
-                    cyclicBarrier.await(500,TimeUnit.MILLISECONDS);
-                    System.out.println(zk.getChildren(baseBarrierPath,false));
+                    cyclicBarrier.await(500, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException e) {
                     fail(e.getMessage());
                 } catch (BrokenBarrierException e) {
                     fail(e.getMessage());
                 } catch (TimeoutException e) {
-                    thrown=true;
-                } catch (KeeperException e) {
-                    fail(e.getMessage());
+                    thrown = true;
                 }
-                assertTrue("TimeoutException was never thrown!",thrown);
+                assertTrue("TimeoutException was never thrown!", thrown);
             }
         });
         cyclicBarrier.await();
+        errorFuture.get();
     }
 
     @Test(timeout = 1000l, expected = BrokenBarrierException.class)
@@ -163,23 +197,22 @@ public class ZkCyclicBarrierTest {
 
         ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(3, new BaseZkSessionManager(newZooKeeper()), baseBarrierPath);
 
-        executor.submit(new Runnable() {
+        Future<Void> errorFuture = executor.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
                 boolean thrown = false;
                 try {
-                    cyclicBarrier.await(500,TimeUnit.MILLISECONDS);
-                } catch (InterruptedException e) {
-                    fail(e.getMessage());
-                } catch (BrokenBarrierException e) {
-                    fail(e.getMessage());
+                    cyclicBarrier.await(500, TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
-                    thrown=true;
+                    thrown = true;
                 }
-                assertTrue("TimeoutException was never thrown!",thrown);
+                assertTrue("TimeoutException was never thrown!", thrown);
+                return null;
             }
         });
         otherCyclicBarrier.await();
+        //check for Errors
+        errorFuture.get();
     }
 
     @Test(timeout = 1000l)
@@ -191,35 +224,61 @@ public class ZkCyclicBarrierTest {
 
     }
 
-    @Test(timeout = 1000l, expected = BrokenBarrierException.class)
+    @Test(timeout = 3000l)
     public void testResetOnOtherThreadBreaksBarrier() throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(2, new BaseZkSessionManager(zk), baseBarrierPath);
 
-        executor.submit(new Runnable() {
+        Future<Void> errorFuture = executor.submit(new Callable<Void>() {
             @Override
-            public void run() {
-                cyclicBarrier.reset();
+            public Void call() throws Exception {
+                boolean thrown = false;
+                try {
+                    cyclicBarrier.await();
+                } catch (BrokenBarrierException bbe) {
+                    thrown = true;
+                }
+                assertTrue("BrokenBarrierException was not thrown!", thrown);
+                return null;
             }
         });
-
-        cyclicBarrier.await();
+        //make sure the other thread is waiting
+        while(cyclicBarrier.getNumberWaiting()<=0){
+            Thread.sleep(100);
+        }
+        cyclicBarrier.reset();
+        //check for bad things happening
+        errorFuture.get();
     }
 
-    @Test(timeout = 1000l, expected = BrokenBarrierException.class)
+    @Test(timeout = 3000l)
     public void testResetOnOtherClientBreaksBarrier() throws Exception{
         cyclicBarrier = new ZkCyclicBarrier(3, new BaseZkSessionManager(zk), baseBarrierPath);
 
-        ZooKeeper otherZooKeeper = newZooKeeper();
-        ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(3, new BaseZkSessionManager(otherZooKeeper), baseBarrierPath);
-
-        executor.submit(new Runnable() {
+        Future<Void> errorFuture = executor.submit(new Callable<Void>() {
             @Override
-            public void run() {
-                cyclicBarrier.reset();
+            public Void call() throws Exception {
+                ZooKeeper otherZooKeeper = newZooKeeper();
+                boolean thrown = false;
+                try {
+                    ZkCyclicBarrier otherCyclicBarrier = new ZkCyclicBarrier(3, new BaseZkSessionManager(otherZooKeeper), baseBarrierPath);
+                    otherCyclicBarrier.await();
+                } catch (BrokenBarrierException bbe) {
+                    System.out.println("Barrier Broken");
+                    thrown = true;
+                } finally {
+                    otherZooKeeper.close();
+                }
+                assertTrue("BrokenBarrierException was not thrown!", thrown);
+                return null;
             }
         });
-
-        otherCyclicBarrier.await();
+        //make sure the other thread is waiting
+        while(cyclicBarrier.getNumberWaiting()<=0){
+            Thread.sleep(100);
+        }
+        cyclicBarrier.reset();
+        //check for bad things happening
+        errorFuture.get();
     }
 
 
@@ -227,7 +286,7 @@ public class ZkCyclicBarrierTest {
         return new ZooKeeper("localhost:2181", timeout,new Watcher() {
             @Override
             public void process(WatchedEvent event) {
-                System.out.println(event);
+//                System.out.println(event);
             }
         });
     }
