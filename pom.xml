@@ -19,8 +19,8 @@
             <id>sonatype-snapshots</id>
             <url>https://oss.sonatype.org/content/groups/public</url>
 
-            <snapshots />
-            <releases />
+            <snapshots/>
+            <releases/>
         </repository>
     </repositories>
 
@@ -58,6 +58,7 @@
     <build>
 
         <plugins>
+
             <plugin>
                 <groupId>com.objectdriven.maven</groupId>
                 <artifactId>maven-zookeeper-plugin</artifactId>
@@ -80,8 +81,6 @@
                             <goal>stop</goal>
                         </goals>
                     </execution>
-
-
                 </executions>
             </plugin>
             <plugin>

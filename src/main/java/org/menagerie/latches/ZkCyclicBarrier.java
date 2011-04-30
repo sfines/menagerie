@@ -20,7 +20,6 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
-import org.apache.zookeeper.data.Stat;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
 import org.menagerie.locks.ReentrantZkLock;
@@ -182,15 +181,17 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      */
     public ZkCyclicBarrier(long size, ZkSessionManager zkSessionManager, String barrierNode, List<ACL> privileges, boolean tolerateFailures) {
         super(size,barrierNode, zkSessionManager,privileges);
+
         this.barrierMode = tolerateFailures?CreateMode.PERSISTENT_SEQUENTIAL:CreateMode.EPHEMERAL_SEQUENTIAL;
         ensureNodeExists();
-        try {
-            checkReset();
-        } catch (KeeperException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+//        try {
+//            checkReset();
+//            System.out.printf("%s: Created new CyclicBarrier%n",Thread.currentThread().getName());
+//        } catch (KeeperException e) {
+//            throw new RuntimeException(e);
+//        } catch (InterruptedException e) {
+//            throw new RuntimeException(e);
+//        }
     }
 
 
@@ -237,9 +238,9 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * @throws BrokenBarrierException if another party breaks the barrier, or another party calls reset while
      *          waiting for the Barrier to complete
      */
-    public long await() throws InterruptedException, BrokenBarrierException {
+    public void await() throws InterruptedException, BrokenBarrierException {
         try {
-            return await(Long.MAX_VALUE,TimeUnit.DAYS);
+            await(Long.MAX_VALUE,TimeUnit.DAYS);
         } catch (TimeoutException e) {
             //should never happen, since we're waiting for forever. Still, throw it anyway, just in case
             throw new RuntimeException(e);
@@ -285,10 +286,12 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * If the maximum time is reached, and the barrier has not been completed, the barrier will be broken for
      * all other parties, and a {@link java.util.concurrent.TimeoutException} will be thrown on this thread.
      *
+     * <p>Note that, unlike {@link java.util.concurrent.CyclicBarrier} in the standarad JDK, this method
+     * does <em>not</em> return a count of this thread's position in the barrier. This is because it is essentially
+     * impossible to do so accurately.
+     *
      * @param timeout the maximum amount of time to wait for the barrier to complete
      * @param unit the TimeUnit to use
-     * @return the index of this thread with respect to all other parties in the Barrier. If this thread is the
-     *          first to arrive, index is {@link #getParties()}-1; the last thread to arrive will return 0
      * @throws InterruptedException if the local thread is interrupted, or if there is a communication error
      *          with ZooKeeper
      * @throws BrokenBarrierException if another party breaks the barrier, or another party calls reset while
@@ -296,70 +299,59 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
      * @throws java.util.concurrent.TimeoutException if the maximum wait time is exceeded before the Barrier can be
      *          completed.
      */
-    public long await(long timeout, TimeUnit unit) throws InterruptedException, BrokenBarrierException, TimeoutException {
-        checkAndBreakIfInterrupted();
-        ZooKeeper zooKeeper = zkSessionManager.getZooKeeper();
-        String myNode;
-        try {
-            //ensure that the state of the barrier isn't broken
-            if(isBroken()){
-                //barrier has been broken
-                throw new BrokenBarrierException(new String(zooKeeper.getData(getBrokenPath(),false,new Stat())));
+    public void await(long timeout, TimeUnit unit) throws InterruptedException, BrokenBarrierException, TimeoutException {
+        long timeLeftNanos = unit.toNanos(timeout);
+        //add my node to the collection
+
+        String myNode=null;
+        try{
+            myNode = zkSessionManager.getZooKeeper().create(getBarrierBasePath(),emptyNode,privileges,CreateMode.EPHEMERAL_SEQUENTIAL);
+
+            while(timeLeftNanos>0){
+                long start = System.nanoTime();
+                boolean acquired = localLock.tryLock(timeLeftNanos, TimeUnit.NANOSECONDS);
+                long end = System.nanoTime();
+                timeLeftNanos-=(end-start);
+                if(!acquired||timeLeftNanos<0) throw new TimeoutException();
+                try{
+                    if(isCleared()){
+                        //the Barrier has been cleared, so we are done
+                        return;
+                    }else{
+                        ZooKeeper zk = zkSessionManager.getZooKeeper();
+                        List<String> barrierChildren = ZkUtils.filterByPrefix(zk.getChildren(baseNode, signalWatcher), barrierPrefix);
+                        int currentChildren= barrierChildren.size();
+                        if(currentChildren>=total){
+                            //we've finished, so let's clear and return
+                            ZkUtils.safeCreate(zk,getClearedPath(),emptyNode,privileges,CreateMode.PERSISTENT);
+                            return;
+                        }
+                        else if(localCount.get()>barrierChildren.size())throw new BrokenBarrierException();
+                        else{
+                            localCount.set(barrierChildren.size());
+                            /*
+                            we know that the barrierChildren's size is at least as large as the local count,
+                            but it isn't large enough to finish yet.
+                            so let's wait until we receive word that something has changed
+                            */
+                            timeLeftNanos=condition.awaitNanos(timeLeftNanos);
+                        }
+                    }
+                }finally{
+                    localLock.unlock();
+                }
             }
-            myNode = zooKeeper.create(getBarrierBasePath(), emptyNode, privileges, barrierMode);
+            throw new TimeoutException();
         } catch (KeeperException e) {
-            throw new InterruptedException(e.getMessage());
-        }
-        zkSessionManager.addConnectionListener(connectionListener);
-        while(true){
-            checkAndBreakIfInterrupted();
-            localLock.lock();
-            try {
-                if(isBroken()){
-                    //delete my node
-                    zooKeeper.delete(myNode,-1);
-                    //barrier has been broken
-                    throw new BrokenBarrierException(new String(zooKeeper.getData(getBrokenPath(),false,new Stat())));
-                }else if(isReset(zooKeeper)){
-                    //delete my node
-                    zooKeeper.delete(myNode,-1);
-                    throw new BrokenBarrierException("The Barrier has been reset");
+            throw new RuntimeException(e);
+        } finally{
+            //delete myNode
+            if(myNode!=null){
+                try{
+                    ZkUtils.safeDelete(zkSessionManager.getZooKeeper(),myNode,-1);
+                } catch (KeeperException e) {
+                    throw new RuntimeException(e);
                 }
-                List<String> children = ZkUtils.filterByPrefix(zkSessionManager.getZooKeeper().getChildren(baseNode,signalWatcher),barrierPrefix);
-                int count = children.size();
-                int currentLocalCount = localCount.get();
-                if(count>=total){
-                    //latch has been used, so remove latchReady key
-                    if(zooKeeper.exists(getReadyPath(),false)!=null){
-                        ZkUtils.safeDelete(zooKeeper,getReadyPath(),-1);
-                    }
-                    //delete my node
-                    zooKeeper.delete(myNode,-1);
-                    //find this node
-                    ZkUtils.sortBySequence(children,delimiter);
-                    return children.indexOf(myNode.substring(myNode.lastIndexOf("/")+1));
-                }else if(count<currentLocalCount){
-                    /*
-                        This can only happen if you are using Ephemeral nodes, which can then be deleted by
-                        ZooKeeper in the case of client deaths. In this case, somebody prematurely left the barrier,
-                        so break it for everyone.
-                     */
-                    breakBarrier("Another party left the barrier prematurely!");
-                    zooKeeper.delete(myNode,-1);
-                    throw new BrokenBarrierException("Another party left the barrier prematurely!");
-                }else{
-                    localCount.set(count);
-                    boolean alerted = condition.await(timeout,unit);
-                    if(!alerted){
-                        breakBarrier("Timeout occurred waiting for barrier to complete");
-                        throw new TimeoutException("Timed out waiting for barrier to complete");
-                    }
-                }
-            } catch (KeeperException e) {
-                throw new InterruptedException(e.getMessage());
-            } finally{
-                localLock.unlock();
-                zkSessionManager.removeConnectionListener(connectionListener);
             }
         }
     }
@@ -398,6 +390,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
     public long getParties(){
         return total;
     }
+
 
     /**
      * Determines whether or not this barrier has been broken.
@@ -444,6 +437,9 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
 /*------------------------------------------------------------------------------------------------------------------*/
     /*private helper methods*/
 
+    public boolean isCleared() throws InterruptedException, KeeperException {
+        return zkSessionManager.getZooKeeper().exists(getClearedPath(),false)!=null;
+    }
     /*
      * Checks the state of the Barrier, and calls reset if necessary
      */
@@ -455,7 +451,8 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
 
         try {
             lock.lock();
-            if(isBroken()||isReset(zooKeeper)||zooKeeper.exists(getReadyPath(),false)==null){
+
+            if(!isCleared()&&(isBroken()||isReset(zooKeeper)||zooKeeper.exists(getReadyPath(),false)==null)){
                 //need to reset
                 doReset(zooKeeper);
             }else{
@@ -484,12 +481,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
     private void doReset(ZooKeeper zooKeeper) throws KeeperException, InterruptedException {
         //put a reset node on the path to let people know it's been reset
         if(zooKeeper.exists(getResetPath(),false)==null){
-            try{
-                zooKeeper.create(getResetPath(),emptyNode,privileges, CreateMode.EPHEMERAL);
-            }catch(KeeperException ke){
-                if(ke.code()!=KeeperException.Code.NODEEXISTS)
-                    throw ke;
-            }
+            ZkUtils.safeCreate(zooKeeper,getResetPath(),emptyNode,privileges,CreateMode.EPHEMERAL);
         }
         //remove the latchReady state
         if(zooKeeper.exists(getReadyPath(),false)!=null){
@@ -497,15 +489,18 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
         }
 
         clearState(zooKeeper,barrierPrefix);
+        
         //remove any broken state setters
         if(isBroken()){
-            zooKeeper.delete(getBrokenPath(),-1);
+            ZkUtils.safeDelete(zooKeeper,getBrokenPath(),-1);
         }
         //remove the reset node, since we're back in a good state
-        zooKeeper.delete(getResetPath(),-1);
+        ZkUtils.safeDelete(zooKeeper,getBrokenPath(),-1);
 
+        //delete the reset node
+        ZkUtils.safeDelete(zooKeeper,getResetPath(),-1);
         //put the good state node in place
-        zooKeeper.create(getReadyPath(),emptyNode,privileges,CreateMode.PERSISTENT);
+        ZkUtils.safeCreate(zooKeeper,getReadyPath(),emptyNode,privileges,CreateMode.PERSISTENT);
     }
 
     /*
@@ -538,6 +533,9 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
         return baseNode+"/"+"cyclicBarrier"+delimiter+BarrierState.LATCH_READY;
     }
 
+    private String getClearedPath(){
+        return baseNode+"/"+"cyclicBarrier"+delimiter+BarrierState.CLEARED;
+    }
 
     private String getBarrierBasePath(){
         return baseNode+"/"+barrierPrefix+delimiter;
@@ -550,6 +548,7 @@ public final class ZkCyclicBarrier extends AbstractZkBarrier {
     private enum BarrierState{
         LATCH_READY,
         BROKEN,
+        CLEARED,
         RESET
     }
 

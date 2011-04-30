@@ -101,24 +101,24 @@ public class ZkSemaphoreTest {
         final ZkSemaphore semaphore = new ZkSemaphore(2,basePath,zkSessionManager);
 
         semaphore.acquire();
-        testService.submit(new Runnable() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
+                ZooKeeper zk = newZooKeeper();
                 try {
-                    ZooKeeper zk = newZooKeeper();
-                    ZkSemaphore semaphore2 = new ZkSemaphore(2,basePath,new BaseZkSessionManager(zk));
+
+                    ZkSemaphore semaphore2 = new ZkSemaphore(2, basePath, new BaseZkSessionManager(zk));
                     semaphore2.acquire();
                     latch.countDown();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                } finally {
+                    zk.close();
                 }
+                return null;
             }
         });
 
-
         latch.await();
+        errorFuture.get();
     }
 
 
@@ -127,7 +127,7 @@ public class ZkSemaphoreTest {
         final CountDownLatch latch = new CountDownLatch(1);
         final ZkSemaphore semaphore = new ZkSemaphore(1,basePath,zkSessionManager);
         semaphore.acquire();
-        testService.submit(new Runnable() {
+        Future<?> errorFuture = testService.submit(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -145,7 +145,7 @@ public class ZkSemaphoreTest {
         semaphore.release();
         boolean noTimeOut = latch.await(500, TimeUnit.MILLISECONDS);
         assertTrue("Semaphore did not release a permit for another party!",noTimeOut);
-
+        errorFuture.get();
     }
 
     @Test(timeout = 1500l)
@@ -153,19 +153,18 @@ public class ZkSemaphoreTest {
         final CountDownLatch latch = new CountDownLatch(1);
         final ZkSemaphore semaphore = new ZkSemaphore(1,basePath,zkSessionManager);
         semaphore.acquire();
-        testService.submit(new Runnable() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
-            public void run() {
+            public Void call() throws Exception {
+                ZooKeeper zk = newZooKeeper();
                 try {
-                    ZooKeeper zk = newZooKeeper();
-                    ZkSemaphore semaphore2 = new ZkSemaphore(1,basePath,new BaseZkSessionManager(zk));
+                    ZkSemaphore semaphore2 = new ZkSemaphore(1, basePath, new BaseZkSessionManager(zk));
                     semaphore2.acquire();
                     latch.countDown();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                } finally {
+                    zk.close();
                 }
+                return null;
             }
         });
 
@@ -176,6 +175,7 @@ public class ZkSemaphoreTest {
         boolean noTimeOut = latch.await(500, TimeUnit.MILLISECONDS);
         assertTrue("Semaphore did not release a permit for another party!",noTimeOut);
 
+        errorFuture.get();
     }
 
     @Test(timeout = 1000l)
@@ -199,7 +199,7 @@ public class ZkSemaphoreTest {
 
         semaphore.acquire(2);
         assertEquals("Incorrect number of permits reported!",0,semaphore.availablePermits());
-        testService.submit(new Callable<Void>() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
             public Void call() throws Exception {
                 semaphore.acquire(2);
@@ -218,6 +218,7 @@ public class ZkSemaphoreTest {
         semaphore.release();
         boolean timedOut3 = latch.await(500,TimeUnit.MILLISECONDS);
         assertTrue("multiple permits were incorrectly released",timedOut3);
+        errorFuture.get();
     }
 
     @Test(timeout = 2000l)
@@ -228,13 +229,17 @@ public class ZkSemaphoreTest {
         semaphore.acquire();
         semaphore.acquire();
         assertEquals("Incorrect number of permits reported!",0,semaphore.availablePermits());
-        testService.submit(new Callable<Void>() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
             public Void call() throws Exception {
                 ZooKeeper zk = newZooKeeper();
-                ZkSemaphore semaphore2 = new ZkSemaphore(2,basePath,new BaseZkSessionManager(zk));
-                semaphore2.acquire(2);
-                latch.countDown();
+                try {
+                    ZkSemaphore semaphore2 = new ZkSemaphore(2, basePath, new BaseZkSessionManager(zk));
+                    semaphore2.acquire(2);
+                    latch.countDown();
+                } finally {
+                    zk.close();
+                }
                 return null;
             }
         });
@@ -249,6 +254,7 @@ public class ZkSemaphoreTest {
         semaphore.release();
         boolean timedOut3 = latch.await(500,TimeUnit.MILLISECONDS);
         assertTrue("multiple permits were incorrectly released",timedOut3);
+        errorFuture.get();
     }
 
     @Test(timeout = 1000l)
@@ -275,10 +281,10 @@ public class ZkSemaphoreTest {
         final ZkSemaphore semaphore = new ZkSemaphore(1,basePath,zkSessionManager);
         assertTrue("Semaphore did not acquire!",semaphore.tryAcquire());
 
-        testService.submit(new Callable<Void>() {
+        Future<Void> errorFuture = testService.submit(new Callable<Void>() {
             @Override
             public Void call() throws Exception {
-                semaphore.tryAcquire(500,TimeUnit.MILLISECONDS);
+                semaphore.tryAcquire(500, TimeUnit.MILLISECONDS);
                 latch.countDown();
                 return null;
             }
@@ -286,6 +292,7 @@ public class ZkSemaphoreTest {
 
         boolean noTimeOut = latch.await(800, TimeUnit.MILLISECONDS);
         assertTrue("Semaphore did not appropriately time out",noTimeOut);
+        errorFuture.get();
     }
 
     private static ZooKeeper newZooKeeper() throws IOException {
