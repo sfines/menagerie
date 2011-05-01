@@ -42,7 +42,6 @@
                     <groupId>com.sun.jmx</groupId>
                     <artifactId>jmxri</artifactId>
                 </exclusion>
-
             </exclusions>
         </dependency>
         <dependency>
@@ -50,6 +49,16 @@
             <artifactId>junit</artifactId>
             <version>4.8.2</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.6.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+            <version>1.6.1</version>
         </dependency>
     </dependencies>
     <properties>
@@ -98,6 +107,7 @@
                         <configuration>
                             <skip>false</skip>
                             <excludes>
+                                <exclude>**/*TestingThreadFactory.java</exclude>
                                 <exclude>**/*LoadTest.java</exclude>
                                 <exclude>**/*PerformanceTest.java</exclude>
                             </excludes>
@@ -111,6 +121,9 @@
                         </goals>
                         <configuration>
                             <skip>false</skip>
+                            <excludes>
+                                <exclude>**/*TestingThreadFactory.java</exclude>
+                            </excludes>
                             <includes>
                                 <include>**/*LoadTest.java</include>
                                 <include>**/*PerformanceTest.java</include>

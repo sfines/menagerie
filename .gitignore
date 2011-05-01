@@ -15,3 +15,4 @@ local.properties
 build/
 dist/
 docs/
+target/
