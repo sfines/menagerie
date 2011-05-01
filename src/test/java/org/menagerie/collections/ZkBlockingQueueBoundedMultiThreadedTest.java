@@ -122,7 +122,7 @@ public class ZkBlockingQueueBoundedMultiThreadedTest extends MenagerieTest{
         assertEquals("Reported Queue Size is incorrect!",0,testQueue.size());
     }
 
-    @Test(timeout = 1000l)
+    @Test(timeout = 1000l,expected = TimeoutException.class)
     public void testPollTimesOutBlocking() throws Exception{
         final CountDownLatch startLatch = new CountDownLatch(1);
 
@@ -132,7 +132,7 @@ public class ZkBlockingQueueBoundedMultiThreadedTest extends MenagerieTest{
                 startLatch.await();
                 //this should block until the barrier is entered elsewhere
                 System.out.println(Thread.currentThread().getName()+": Polling an element off the queue...");
-                String queueEntry = testQueue.poll(100,TimeUnit.MILLISECONDS);
+                String queueEntry = testQueue.poll(500,TimeUnit.MILLISECONDS);
                 System.out.println(Thread.currentThread().getName()+": Element "+ queueEntry+" taken from queue");
                 return queueEntry;
             }
@@ -141,7 +141,7 @@ public class ZkBlockingQueueBoundedMultiThreadedTest extends MenagerieTest{
         //tell the other thread to begin the take operation
         startLatch.countDown();
         String shouldBeNull = takeFuture.get(250, TimeUnit.MILLISECONDS);
-        assertNull("A Non-Null string was incorrectly returned!",shouldBeNull);
+        fail("Test did not properly time out!");
     }
 
     @Test(timeout = 1000l)

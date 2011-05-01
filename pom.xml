@@ -15,13 +15,20 @@
             <id>jboss-nexus</id>
             <url>https://repository.jboss.org/nexus/content/groups/public</url>
         </repository>
-        <repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
             <id>sonatype-snapshots</id>
             <url>https://oss.sonatype.org/content/groups/public</url>
-            <snapshots />
+            <snapshots>
+                <enabled>true</enabled>
+                <checksumPolicy>warn</checksumPolicy>
+                <updatePolicy>daily</updatePolicy>
+            </snapshots>
             <releases />
-        </repository>
-    </repositories>
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <dependency>
@@ -63,69 +70,70 @@
                      <target>1.6</target>
                  </configuration>
              </plugin>
-            <!--<plugin>-->
-                <!--<groupId>com.objectdriven.maven</groupId>-->
-                <!--<artifactId>maven-zookeeper-plugin</artifactId>-->
-                <!--<version>[1.0,)</version>-->
-                <!--<configuration>-->
-                    <!--<port>2181</port>-->
-                <!--</configuration>-->
-                <!--<executions>-->
-                    <!--<execution>-->
-                        <!--<id>launch-zookeeper</id>-->
-                        <!--<phase>test</phase>-->
-                        <!--<goals>-->
-                            <!--<goal>start</goal>-->
-                        <!--</goals>-->
-                    <!--</execution>-->
-                    <!--<execution>-->
-                        <!--<id>stop-zookeeper</id>-->
-                        <!--<phase>post-integration-test</phase>-->
-                        <!--<goals>-->
-                            <!--<goal>stop</goal>-->
-                        <!--</goals>-->
-                    <!--</execution>-->
-
-
-                <!--</executions>-->
-            <!--</plugin>-->
-            <!--<plugin>-->
-                <!--<artifactId>maven-surefire-plugin</artifactId>-->
-                <!--<configuration>-->
-                    <!--<skip>true</skip>-->
-                <!--</configuration>-->
-                <!--<executions>-->
-                    <!--<execution>-->
-                        <!--<id>unit-tests</id>-->
-                        <!--<phase>test</phase>-->
-                        <!--<goals>-->
-                            <!--<goal>test</goal>-->
-                        <!--</goals>-->
-                        <!--<configuration>-->
-                            <!--<skip>false</skip>-->
-                            <!--<excludes>-->
-                                <!--<exclude>**/*LoadTest.java</exclude>-->
-                                <!--<exclude>**/*PerformanceTest.java</exclude>-->
-                            <!--</excludes>-->
-                        <!--</configuration>-->
-                    <!--</execution>-->
-                    <!--<execution>-->
-                        <!--<id>performance-tests</id>-->
-                        <!--<phase>integration-test</phase>-->
-                        <!--<goals>-->
-                            <!--<goal>test</goal>-->
-                        <!--</goals>-->
-                        <!--<configuration>-->
-                            <!--<skip>false</skip>-->
-                            <!--<includes>-->
-                                <!--<include>**/*LoadTest.java</include>-->
-                                <!--<include>**/*PerformanceTest.java</include>-->
-                            <!--</includes>-->
-                        <!--</configuration>-->
-                    <!--</execution>-->
-                <!--</executions>-->
-
-            <!--</plugin>-->
+            <plugin>
+                <groupId>com.objectdriven.maven</groupId>
+                <artifactId>maven-zookeeper-plugin</artifactId>
+                <version>1.0-SNAPSHOT</version>
+                <configuration>
+                    <port>2181</port>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>launch-zookeeper</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>start</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>stop-zookeeper</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>stop</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>unit-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                            <excludes>
+                                <exclude>org.menagerie.util.TestingThreadFactory</exclude>
+                                <exclude>**/*LoadTest.java</exclude>
+                                <exclude>**/*PerformanceTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>performance-tests</id>
+                        <phase>integration-test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                            <includes>
+                                <include>**/*LoadTest.java</include>
+                                <include>**/*PerformanceTest.java</include>
+                            </includes>
+                            <excludes>
+                                <exclude>org.menagerie.util.TestingThreadFactory</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.sonatype.maven.plugin</groupId>
                 <artifactId>emma-maven-plugin</artifactId>
