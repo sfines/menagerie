@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.menagerie.BaseZkSessionManager;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -28,7 +29,7 @@ public class ZkSemaphoreTest {
     private static final String hostString = "localhost:2181";
     private static final String basePath = "/test-semaphores";
     private static final int timeout = 2000;
-    private static final ExecutorService testService = Executors.newFixedThreadPool(2);
+    private static final ExecutorService testService = Executors.newFixedThreadPool(2, new TestingThreadFactory());
 
     private static ZooKeeper zk;
     private static ZkSessionManager zkSessionManager;
@@ -299,7 +300,7 @@ public class ZkSemaphoreTest {
         return new ZooKeeper(hostString, timeout,new Watcher() {
             @Override
             public void process(WatchedEvent event) {
-                System.out.println(event);
+//                System.out.println(event);
             }
         });
     }

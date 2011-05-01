@@ -22,6 +22,7 @@ import org.menagerie.BaseZkSessionManager;
 import org.menagerie.JavaSerializer;
 import org.menagerie.MenagerieTest;
 import org.menagerie.Serializer;
+import org.menagerie.util.TestingThreadFactory;
 
 import java.util.concurrent.*;
 
@@ -40,7 +41,7 @@ public class ZkBlockingQueueBoundedMultiClientTest extends MenagerieTest{
 
     Serializer<String> serializer = new JavaSerializer<String>();
 
-    private static final ExecutorService service = Executors.newFixedThreadPool(2);
+    private static final ExecutorService service = Executors.newFixedThreadPool(2,new TestingThreadFactory());
     private static final int bound = 5;
     @AfterClass
     public static void shutdownAll(){
@@ -66,14 +67,18 @@ public class ZkBlockingQueueBoundedMultiClientTest extends MenagerieTest{
             @Override
             public String call() throws Exception {
                 ZooKeeper myZk = newZooKeeper();
-                ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
-                startLatch.await();
+                try{
+                    ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
+                    startLatch.await();
 
-                //this should block until the barrier is entered elsewhere
-                System.out.println(Thread.currentThread().getName()+": Taking an element off the queue...");
-                String queueEntry = myQueue.take();
-                System.out.println(Thread.currentThread().getName()+": Element "+ queueEntry+" taken from queue");
-                return queueEntry;
+                    //this should block until the barrier is entered elsewhere
+                    System.out.println(Thread.currentThread().getName()+": Taking an element off the queue...");
+                    String queueEntry = myQueue.take();
+                    System.out.println(Thread.currentThread().getName()+": Element "+ queueEntry+" taken from queue");
+                    return queueEntry;
+                }finally{
+                    myZk.close();
+                }
             }
         });
 
@@ -102,15 +107,19 @@ public class ZkBlockingQueueBoundedMultiClientTest extends MenagerieTest{
             @Override
             public String call() throws Exception {
                 ZooKeeper myZk = newZooKeeper();
-                @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
-                ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
-                startLatch.await();
+                try{
+                    @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection"})
+                    ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
+                    startLatch.await();
 
-                //this should block until the barrier is entered elsewhere
-                System.out.println(Thread.currentThread().getName()+": Polling an element off the queue...");
-                String queueEntry = myQueue.poll(Long.MAX_VALUE,TimeUnit.DAYS);
-                System.out.println(Thread.currentThread().getName()+": Element "+ queueEntry+" taken from queue");
-                return queueEntry;
+                    //this should block until the barrier is entered elsewhere
+                    System.out.println(Thread.currentThread().getName()+": Polling an element off the queue...");
+                    String queueEntry = myQueue.poll(Long.MAX_VALUE,TimeUnit.DAYS);
+                    System.out.println(Thread.currentThread().getName()+": Element "+ queueEntry+" taken from queue");
+                    return queueEntry;
+                }finally{
+                    myZk.close();
+                }
             }
         });
 
@@ -139,9 +148,13 @@ public class ZkBlockingQueueBoundedMultiClientTest extends MenagerieTest{
             @Override
             public Boolean call() throws Exception {
                 ZooKeeper myZk = newZooKeeper();
-                ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
-                //this should block
-                return myQueue.offer("Test String",Long.MAX_VALUE,TimeUnit.DAYS);
+                try{
+                    ZkBlockingQueue<String> myQueue = new ZkBlockingQueue<String>(testPath, serializer, new BaseZkSessionManager(myZk), bound);
+                    //this should block
+                    return myQueue.offer("Test String",Long.MAX_VALUE,TimeUnit.DAYS);
+                }finally{
+                    myZk.close();
+                }
             }
         });
 

@@ -182,14 +182,19 @@ public class ZkUtils {
      * @param version the version of the nodes to remove
      * @throws KeeperException if some issue with the ZooKeeper server which is <i>not</i> of type NoNode occurs.
      * @throws InterruptedException if some communication error happens between the ZooKeeper client and server
-     */
-    public static void recursiveSafeDelete(ZooKeeper zk, String nodeToDelete, int version) throws KeeperException, InterruptedException{
-        List<String> children = zk.getChildren(nodeToDelete,false);
-        for(String child: children){
-            recursiveSafeDelete(zk,nodeToDelete+"/"+child,version);
-        }
-        //delete this node
-        safeDelete(zk,nodeToDelete,version);
+      */
+     public static void recursiveSafeDelete(ZooKeeper zk, String nodeToDelete, int version) throws KeeperException, InterruptedException{
+         try{
+             List<String> children = zk.getChildren(nodeToDelete,false);
+             for(String child: children){
+                 recursiveSafeDelete(zk,nodeToDelete+"/"+child,version);
+             }
+             //delete this node
+             safeDelete(zk,nodeToDelete,version);
+         }catch(KeeperException ke){
+             if(ke.code()!=KeeperException.Code.NONODE)
+                 throw ke;
+         }
     }
 
     /**
