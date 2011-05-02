@@ -124,7 +124,12 @@ public class ReentrantZkLock2 implements Lock {
             final String lockNode = createLockNodeInterruptibly();
             long end = System.nanoTime();
             timeLeftNanos = timeLeftNanos-(end-start);
-            if(Thread.interrupted()||timeLeftNanos<0){
+
+            if(Thread.interrupted()){
+                doCleanup(lockNode);
+                throw new InterruptedException();
+            }
+            if(timeLeftNanos<0){
                 doCleanup(lockNode);
                 return false;
             }
@@ -135,9 +140,11 @@ public class ReentrantZkLock2 implements Lock {
                     long timeoutNanos = timeLeft;
 
                     while(timeoutNanos>0){
-                        if(Thread.interrupted())
+                        if(Thread.interrupted()){
+                            doCleanup(lockNode);
                             throw new InterruptedException();
-                        localLock.lock();
+                        }
+                        localLock.lockInterruptibly();
                         try{
                             long start = System.nanoTime();
                             boolean acquired = tryAcquireDistributed(zk,lockNode,true);

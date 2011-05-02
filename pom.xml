@@ -15,14 +15,20 @@
             <id>jboss-nexus</id>
             <url>https://repository.jboss.org/nexus/content/groups/public</url>
         </repository>
-        <repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
             <id>sonatype-snapshots</id>
             <url>https://oss.sonatype.org/content/groups/public</url>
-
-            <snapshots/>
-            <releases/>
-        </repository>
-    </repositories>
+            <snapshots>
+                <enabled>true</enabled>
+                <checksumPolicy>warn</checksumPolicy>
+                <updatePolicy>daily</updatePolicy>
+            </snapshots>
+            <releases />
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <dependency>
@@ -67,40 +73,15 @@
     <build>
 
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>2.3.2</version>
-                <configuration>
-                    <source>1.6</source>
-                    <target>1.6</target>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>com.objectdriven.maven</groupId>
-                <artifactId>maven-zookeeper-plugin</artifactId>
-                <version>[1.0,)</version>
-                <configuration>
-                    <port>2181</port>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>launch-zookeeper</id>
-                        <phase>test</phase>
-                        <goals>
-                            <goal>start</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>stop-zookeeper</id>
-                        <phase>post-integration-test</phase>
-                        <goals>
-                            <goal>stop</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
+             <plugin>
+                 <groupId>org.apache.maven.plugins</groupId>
+                 <artifactId>maven-compiler-plugin</artifactId>
+                 <version>2.3.2</version>
+                 <configuration>
+                     <source>1.6</source>
+                     <target>1.6</target>
+                 </configuration>
+             </plugin>
             <plugin>
                 <groupId>com.objectdriven.maven</groupId>
                 <artifactId>maven-zookeeper-plugin</artifactId>
@@ -140,7 +121,7 @@
                         <configuration>
                             <skip>false</skip>
                             <excludes>
-                                <exclude>**/*TestingThreadFactory.java</exclude>
+                                <exclude>org.menagerie.util.TestingThreadFactory</exclude>
                                 <exclude>**/*LoadTest.java</exclude>
                                 <exclude>**/*PerformanceTest.java</exclude>
                             </excludes>
@@ -154,9 +135,6 @@
                         </goals>
                         <configuration>
                             <skip>false</skip>
-                            <excludes>
-                                <exclude>**/*TestingThreadFactory.java</exclude>
-                            </excludes>
                             <includes>
                                 <include>**/*LoadTest.java</include>
                                 <include>**/*PerformanceTest.java</include>

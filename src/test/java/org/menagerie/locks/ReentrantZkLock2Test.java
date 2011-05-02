@@ -24,10 +24,13 @@ import org.menagerie.BaseZkSessionManager;
 import org.menagerie.ZkSessionManager;
 import org.menagerie.ZkUtils;
 import org.menagerie.util.TestingThreadFactory;
+import org.omg.PortableServer.THREAD_POLICY_ID;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
@@ -239,7 +242,162 @@ public class ReentrantZkLock2Test {
             firstLock.unlock();
         }
     }
-    
+
+    @Test(timeout = 1000l)
+    public void testLockInterruptiblyWorksDifferentInstances() throws Exception{
+        final CountDownLatch latch = new CountDownLatch(1);
+        Lock firstLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
+        firstLock.lockInterruptibly();
+        Future<Void>errorFuture;
+        try{
+            errorFuture = testService.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    Lock secondLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
+                    secondLock.lockInterruptibly();
+                    try {
+                        latch.countDown();
+                    } finally {
+                        secondLock.unlock();
+                    }
+                    return null;
+                }
+            });
+
+            boolean nowAcquired = latch.await(500, TimeUnit.MILLISECONDS);
+            assertTrue("The Second lock was acquired before the first lock was released!",!nowAcquired);
+
+        }finally{
+            firstLock.unlock();
+        }
+        //make sure that no errors happen
+        errorFuture.get();
+    }
+
+    @Test(timeout = 1000l)
+    public void testLockInterruptiblyWorksSameInstance() throws Exception{
+        final CountDownLatch latch = new CountDownLatch(1);
+        final Lock firstLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
+        firstLock.lockInterruptibly();
+        Future<Void>errorFuture;
+        try{
+            errorFuture = testService.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+//                    Lock secondLock = new ReentrantZkLock(baseLockPath, zkSessionManager);
+                    firstLock.lockInterruptibly();
+                    try {
+                        latch.countDown();
+                    } finally {
+                        firstLock.unlock();
+                    }
+                    return null;
+                }
+            });
+
+            boolean nowAcquired = latch.await(500, TimeUnit.MILLISECONDS);
+            assertTrue("The Second lock was acquired before the first lock was released!",!nowAcquired);
+
+        }finally{
+            firstLock.unlock();
+        }
+        //make sure that no errors happen
+        errorFuture.get();
+    }
+
+    @Test(timeout = 2000l)
+    public void testLockInterruptiblyIsInterruptibleDifferentLockInstances() throws Exception{
+        /*
+        The idea here is to test to ensure that we can interrupt the
+        acquisition of a lockInterruptibly call from another thread, using a different
+        instance of the same distributed lock
+        */
+        Lock mainLock = new ReentrantZkLock2(baseLockPath,zkSessionManager);
+        mainLock.lock();
+        final CyclicBarrier latch = new CyclicBarrier(2);
+        try{
+            final AtomicBoolean bool = new AtomicBoolean();
+            Thread t = new Thread() {
+                @Override
+                public void run() {
+                    Lock secondaryLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
+                    boolean thrown = false;
+                    try {
+                        System.out.printf("%s: Attempting to acquire the lock interruptibly%n",Thread.currentThread().getName());
+                        latch.await();
+                        secondaryLock.lockInterruptibly();
+                        fail("secondary Lock was acquired improperly!");
+                    } catch (InterruptedException ie) {
+                        System.out.printf("%s: Secondary lock threw an InterruptedException$n",Thread.currentThread().getName());
+                        thrown = true;
+                    } catch (BrokenBarrierException e) {
+                        fail(e.getMessage());
+                    }
+                    bool.set(thrown);
+                }
+            };
+            t.setName("secondary-thread");
+            t.start();
+            //make sure that the thread is set
+            latch.await();
+            Thread.sleep(300);
+            //now interrupt the thread
+            System.out.printf("%s: Interrupting secondary thread: %s%n",Thread.currentThread().getName(),t.getName());
+            t.interrupt();
+            //now make sure that we get back true
+            t.join();
+            assertTrue("Thread was not interrupted successfully!",bool.get());
+        }finally{
+            mainLock.unlock();
+        }
+    }
+
+    @Test(timeout = 2000l)
+    public void testLockInterruptiblyIsInterruptibleSameLockInstance() throws Exception{
+        /*
+        The idea here is to test to ensure that we can interrupt the
+        acquisition of a lockInterruptibly call from another thread, using a different
+        instance of the same distributed lock
+        */
+        Lock mainLock = new ReentrantZkLock2(baseLockPath,zkSessionManager);
+        mainLock.lock();
+        final CyclicBarrier latch = new CyclicBarrier(2);
+        try{
+            final AtomicBoolean bool = new AtomicBoolean();
+            Thread t = new Thread() {
+                @Override
+                public void run() {
+                    Lock secondaryLock = new ReentrantZkLock2(baseLockPath, zkSessionManager);
+                    boolean thrown = false;
+                    try {
+                        System.out.printf("%s: Attempting to acquire the lock interruptibly%n",Thread.currentThread().getName());
+                        latch.await();
+                        secondaryLock.lockInterruptibly();
+                        fail("secondary Lock was acquired improperly!");
+                    } catch (InterruptedException ie) {
+                        System.out.printf("%s: Secondary lock threw an InterruptedException$n",Thread.currentThread().getName());
+                        thrown = true;
+                    } catch (BrokenBarrierException e) {
+                        fail(e.getMessage());
+                    }
+                    bool.set(thrown);
+                }
+            };
+            t.setName("secondary-thread");
+            t.start();
+            //make sure that the thread is set
+            latch.await();
+            Thread.sleep(300);
+            //now interrupt the thread
+            System.out.printf("%s: Interrupting secondary thread: %s%n",Thread.currentThread().getName(),t.getName());
+            t.interrupt();
+            //now make sure that we get back true
+            t.join();
+            assertTrue("Thread was not interrupted successfully!",bool.get());
+        }finally{
+            mainLock.unlock();
+        }
+    }
 
     @Test(timeout = 1500l)
     @Ignore("Ignored until Conditions are fully implemented in ReentrantZkLock2")
