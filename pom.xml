@@ -36,7 +36,7 @@
 		<dependency>
 			<groupId>org.apache.zookeeper</groupId>
 			<artifactId>zookeeper</artifactId>
-			<version>3.3.3</version>
+			<version>3.4.6</version>
 			<exclusions>
 				<exclusion>
 					<groupId>javax.jms</groupId>
@@ -85,30 +85,30 @@
 					<target>1.6</target>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>com.objectdriven.maven</groupId>
-				<artifactId>maven-zookeeper-plugin</artifactId>
-				<version>1.0-SNAPSHOT</version>
-				<configuration>
-					<port>2181</port>
-				</configuration>
-				<executions>
-					<execution>
-						<id>launch-zookeeper</id>
-						<phase>test</phase>
-						<goals>
-							<goal>start</goal>
-						</goals>
-					</execution>
-					<execution>
-						<id>stop-zookeeper</id>
-						<phase>post-integration-test</phase>
-						<goals>
-							<goal>stop</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
+<!-- 			<plugin> -->
+<!-- 				<groupId>com.objectdriven.maven</groupId> -->
+<!-- 				<artifactId>maven-zookeeper-plugin</artifactId> -->
+<!-- 				<version>1.0-SNAPSHOT</version> -->
+<!-- 				<configuration> -->
+<!-- 					<port>2181</port> -->
+<!-- 				</configuration> -->
+<!-- 				<executions> -->
+<!-- 					<execution> -->
+<!-- 						<id>launch-zookeeper</id> -->
+<!-- 						<phase>test</phase> -->
+<!-- 						<goals> -->
+<!-- 							<goal>start</goal> -->
+<!-- 						</goals> -->
+<!-- 					</execution> -->
+<!-- 					<execution> -->
+<!-- 						<id>stop-zookeeper</id> -->
+<!-- 						<phase>post-integration-test</phase> -->
+<!-- 						<goals> -->
+<!-- 							<goal>stop</goal> -->
+<!-- 						</goals> -->
+<!-- 					</execution> -->
+<!-- 				</executions> -->
+<!-- 			</plugin> -->
 			<plugin>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
