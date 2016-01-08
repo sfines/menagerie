@@ -258,7 +258,7 @@ public class ReentrantZkLock2 implements Lock {
             public String execute(ZooKeeper zk) throws KeeperException, InterruptedException {
                 String node = getNodeCommand().execute(zk);
                 if(node!=null)
-                    return node;
+                    return baseNode + "/" + node;
 
                 //nobody exists with my party's unique name, so create one and return it
                 return ZkUtils.safeCreate(zk, getBaseLockPath(), emptyBytes, privileges, CreateMode.EPHEMERAL_SEQUENTIAL);
